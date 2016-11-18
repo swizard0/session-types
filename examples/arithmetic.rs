@@ -2,8 +2,8 @@
 // Vasconcelos-Gay-Ravara (2006) with some additional functionality
 
 #[macro_use]
-extern crate session_types;
-use session_types::*;
+extern crate session_types_base;
+use session_types_base::*;
 
 use std::thread::spawn;
 

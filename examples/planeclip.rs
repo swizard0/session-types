@@ -5,10 +5,10 @@
 // The implementation borrows heavily from Pucella-Tov (2008). See that paper
 // for more explanation.
 
-extern crate session_types;
+extern crate session_types_base;
 extern crate rand;
 
-use session_types::*;
+use session_types_base::*;
 
 use rand::{Rand, Rng};
 
