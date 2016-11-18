@@ -1,12 +1,13 @@
 [package]
-name = "session_types"
-version = "0.2.0"
-authors = [ "Philip Munksgaard <pmunksgaard@gmail.com>"
+name = "session-types-base"
+version = "0.3.0"
+authors = [ "Alexey Voznyuk <me@swizard.info>"
+          , "Philip Munksgaard <pmunksgaard@gmail.com>"
           , "Thomas Bracht Laumann Jespersen <laumann.thomas@gmail.com>"
           ]
 
-description = "An implementation of session types in Rust"
-repository = "https://github.com/Munksgaard/session-types"
+description = "An implementation of generic session types in Rust"
+repository = "https://github.com/swizard0/session-types-base"
 readme = "README.md"
 keywords = ["session", "types", "channels", "concurrency", "communication"]
 
