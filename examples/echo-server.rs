@@ -3,8 +3,8 @@
 /// One process reads input and sends it to the other process, which outputs it.
 
 #[macro_use]
-extern crate session_types_base;
-use session_types_base::*;
+extern crate session_types_ng;
+use session_types_ng::*;
 
 use std::thread::spawn;
 

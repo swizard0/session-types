@@ -1,5 +1,5 @@
-#[macro_use] extern crate session_types_base;
-use session_types_base::*;
+#[macro_use] extern crate session_types_ng;
+use session_types_ng::*;
 use std::thread::spawn;
 
 type Id = String;

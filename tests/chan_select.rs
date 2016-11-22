@@ -1,11 +1,11 @@
-#[macro_use] extern crate session_types_base;
+#[macro_use] extern crate session_types_ng;
 
 #[cfg(feature = "chan_select")]
 use std::thread::spawn;
 #[cfg(feature = "chan_select")]
 use std::borrow::ToOwned;
 #[cfg(feature = "chan_select")]
-use session_types_base::*;
+use session_types_ng::*;
 
 // recv and assert a value, then close the channel
 #[cfg(feature = "chan_select")]

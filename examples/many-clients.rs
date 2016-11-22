@@ -1,7 +1,7 @@
-extern crate session_types_base;
+extern crate session_types_ng;
 extern crate rand;
 
-use session_types_base::*;
+use session_types_ng::*;
 use std::sync::mpsc::{channel, Receiver};
 use std::thread::spawn;
 use rand::random;
