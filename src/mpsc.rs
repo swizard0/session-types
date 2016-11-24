@@ -1,5 +1,6 @@
 use std::thread::spawn;
-use std::sync::mpsc::{Sender, Receiver, channel};
+use std::mem::transmute;
+use std::sync::mpsc::{Sender, SendError, Receiver, channel};
 
 #[cfg(feature = "chan_select")]
 use std::sync::mpsc::Select;
@@ -8,7 +9,38 @@ use std::collections::HashMap;
 
 use super::{ChannelSend, ChannelRecv};
 
-pub struct ValueMPSC<T>(pub T);
+pub struct ChannelMPSC {
+    tx: Sender<Box<u8>>,
+    rx: Receiver<Box<u8>>,
+}
+
+pub struct ValueMPSC<T>(pub T) where T: Send + 'static;
+
+impl<T> ChannelSend for ValueMPSC<T> where T: Send + 'static {
+    type Crr = ChannelMPSC;
+    type Err = ();
+
+    fn send(self, carrier: &mut Self::Crr) -> Result<(), Self::Err> {
+        unsafe {
+            let tx: &Sender<Box<T>> = transmute(&carrier.tx);
+            tx.send(Box::new(self.0)).unwrap();
+        }
+        Ok(())
+    }
+}
+
+impl<T> ChannelRecv for ValueMPSC<T> where T: Sized + Send + 'static {
+    type Crr = ChannelMPSC;
+    type Err = ();
+
+    fn recv(carrier: &mut Self::Crr) -> Result<Self, Self::Err> {
+        let value = unsafe {
+            let rx: &Receiver<Box<T>> = transmute(&carrier.rx);
+            *rx.recv().unwrap()
+        };
+        Ok(ValueMPSC(value))
+    }
+}
 
 
 

@@ -82,14 +82,11 @@ pub trait ChannelRecv: Sized {
     type Crr;
     type Err;
 
-    fn recv(&mut Self::Crr) -> Result<Self, Self::Err>;
+    fn recv(carrier: &mut Self::Crr) -> Result<Self, Self::Err>;
 }
 
 pub trait Carrier: Sized {
     type Err;
-
-    // fn send<T>(&mut self, value: T) -> Result<(), Self::Err> where T: ChannelSend<Crr = Self, Err = Self::Err>;
-    // fn recv<T>(&mut self) -> Result<T, Self::Err> where T: ChannelRecv<Crr = Self, Err = Self::Err>;
 
     fn send_choice(&mut self, choice: bool) -> Result<(), Self::Err>;
     fn recv_choice(&mut self) -> Result<bool, Self::Err>;
