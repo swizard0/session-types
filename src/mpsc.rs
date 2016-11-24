@@ -1,13 +1,13 @@
 use std::thread::spawn;
 use std::mem::transmute;
-use std::sync::mpsc::{Sender, SendError, Receiver, channel};
+use std::sync::mpsc::{Sender, SendError, Receiver, RecvError, channel};
 
 #[cfg(feature = "chan_select")]
 use std::sync::mpsc::Select;
 #[cfg(feature = "chan_select")]
 use std::collections::HashMap;
 
-use super::{ChannelSend, ChannelRecv};
+use super::{ChannelSend, ChannelRecv, Carrier};
 
 pub struct ChannelMPSC {
     tx: Sender<Box<u8>>,
@@ -18,45 +18,39 @@ pub struct ValueMPSC<T>(pub T) where T: Send + 'static;
 
 impl<T> ChannelSend for ValueMPSC<T> where T: Send + 'static {
     type Crr = ChannelMPSC;
-    type Err = ();
+    type Err = SendError<Box<T>>;
 
     fn send(self, carrier: &mut Self::Crr) -> Result<(), Self::Err> {
         unsafe {
             let tx: &Sender<Box<T>> = transmute(&carrier.tx);
-            tx.send(Box::new(self.0)).unwrap();
+            tx.send(Box::new(self.0))
         }
-        Ok(())
     }
 }
 
 impl<T> ChannelRecv for ValueMPSC<T> where T: Sized + Send + 'static {
     type Crr = ChannelMPSC;
-    type Err = ();
+    type Err = RecvError;
 
     fn recv(carrier: &mut Self::Crr) -> Result<Self, Self::Err> {
-        let value = unsafe {
+        unsafe {
             let rx: &Receiver<Box<T>> = transmute(&carrier.rx);
-            *rx.recv().unwrap()
-        };
-        Ok(ValueMPSC(value))
+            rx.recv().map(|v| ValueMPSC(*v))
+        }
     }
 }
 
+impl Carrier for ChannelMPSC {
+    type SendChoiceErr = SendError<Box<bool>>;
+    fn send_choice(&mut self, choice: bool) -> Result<(), Self::SendChoiceErr> {
+        ValueMPSC(choice).send(self)
+    }
 
-
-// unsafe fn write_chan<A: marker::Send + 'static, E, P>
-//     (&Chan(ref tx, _, _): &Chan<E, P>, x: A)
-// {
-//     let tx: &Sender<Box<A>> = transmute(tx);
-//     tx.send(Box::new(x)).unwrap();
-// }
-
-// unsafe fn read_chan<A: marker::Send + 'static, E, P>
-//     (&Chan(_, ref rx, _): &Chan<E, P>) -> A
-// {
-//     let rx: &Receiver<Box<A>> = transmute(rx);
-//     *rx.recv().unwrap()
-// }
+    type RecvChoiceErr = RecvError;
+    fn recv_choice(&mut self) -> Result<bool, Self::RecvChoiceErr> {
+        ValueMPSC::recv(self).map(|ValueMPSC(value)| value)
+    }
+}
 
 // /// Homogeneous select. We have a vector of channels, all obeying the same
 // /// protocol (and in the exact same point of the protocol), wait for one of them

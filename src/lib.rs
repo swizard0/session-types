@@ -86,10 +86,11 @@ pub trait ChannelRecv: Sized {
 }
 
 pub trait Carrier: Sized {
-    type Err;
+    type SendChoiceErr;
+    fn send_choice(&mut self, choice: bool) -> Result<(), Self::SendChoiceErr>;
 
-    fn send_choice(&mut self, choice: bool) -> Result<(), Self::Err>;
-    fn recv_choice(&mut self) -> Result<bool, Self::Err>;
+    type RecvChoiceErr;
+    fn recv_choice(&mut self) -> Result<bool, Self::RecvChoiceErr>;
 }
 
 /// A session for a session typed channel.
@@ -198,11 +199,11 @@ fn close_chan<SR, E, P>(chan: Chan<SR, E, P>) {
     std::mem::forget(chan.session);
 }
 
-impl<SR, E, P, T> Chan<SR, E, Send<T, P>> where SR: Carrier, T: ChannelSend<Crr = SR, Err = SR::Err> {
+impl<SR, E, P, T> Chan<SR, E, Send<T, P>> where SR: Carrier, T: ChannelSend<Crr = SR> {
     /// Send a value of type `T` over the channel. Returns a channel with
     /// protocol `P`
     #[must_use]
-    pub fn send(mut self, v: T) -> Result<Chan<SR, E, P>, SR::Err> {
+    pub fn send(mut self, v: T) -> Result<Chan<SR, E, P>, T::Err> {
         match v.send(&mut self.carrier) {
             Ok(()) =>
                 Ok(Chan {
@@ -217,11 +218,11 @@ impl<SR, E, P, T> Chan<SR, E, Send<T, P>> where SR: Carrier, T: ChannelSend<Crr 
     }
 }
 
-impl<SR, E, P, T> Chan<SR, E, Recv<T, P>> where SR: Carrier, T: ChannelRecv<Crr = SR, Err = SR::Err> {
+impl<SR, E, P, T> Chan<SR, E, Recv<T, P>> where SR: Carrier, T: ChannelRecv<Crr = SR> {
     /// Receives a value of type `T` from the channel. Returns a tuple
     /// containing the resulting channel and the received value.
     #[must_use]
-    pub fn recv(mut self) -> Result<(Chan<SR, E, P>, T), SR::Err> {
+    pub fn recv(mut self) -> Result<(Chan<SR, E, P>, T), T::Err> {
         match <T as ChannelRecv>::recv(&mut self.carrier) {
             Ok(v) =>
                 Ok((Chan {
@@ -239,7 +240,7 @@ impl<SR, E, P, T> Chan<SR, E, Recv<T, P>> where SR: Carrier, T: ChannelRecv<Crr 
 impl<SR, E, P, Q> Chan<SR, E, Choose<P, Q>> where SR: Carrier {
     /// Perform an active choice, selecting protocol `P`.
     #[must_use]
-    pub fn sel1(mut self) -> Result<Chan<SR, E, P>, SR::Err> {
+    pub fn sel1(mut self) -> Result<Chan<SR, E, P>, SR::SendChoiceErr> {
         match self.carrier.send_choice(true) {
             Ok(()) =>
                 Ok(Chan {
@@ -255,7 +256,7 @@ impl<SR, E, P, Q> Chan<SR, E, Choose<P, Q>> where SR: Carrier {
 
     /// Perform an active choice, selecting protocol `Q`.
     #[must_use]
-    pub fn sel2(mut self) -> Result<Chan<SR, E, Q>, SR::Err> {
+    pub fn sel2(mut self) -> Result<Chan<SR, E, Q>, SR::SendChoiceErr> {
         match self.carrier.send_choice(false) {
             Ok(()) =>
                 Ok(Chan {
@@ -273,7 +274,7 @@ impl<SR, E, P, Q> Chan<SR, E, Choose<P, Q>> where SR: Carrier {
 /// Convenience function. This is identical to `.sel2()`
 impl<SR, Z, A, B> Chan<SR, Z, Choose<A, B>> where SR: Carrier {
     #[must_use]
-    pub fn skip(self) -> Result<Chan<SR, Z, B>, SR::Err> {
+    pub fn skip(self) -> Result<Chan<SR, Z, B>, SR::SendChoiceErr> {
         self.sel2()
     }
 }
@@ -281,7 +282,7 @@ impl<SR, Z, A, B> Chan<SR, Z, Choose<A, B>> where SR: Carrier {
 /// Convenience function. This is identical to `.sel2().sel2()`
 impl<SR, Z, A, B, C> Chan<SR, Z, Choose<A, Choose<B, C>>> where SR: Carrier {
     #[must_use]
-    pub fn skip2(self) -> Result<Chan<SR, Z, C>, SR::Err> {
+    pub fn skip2(self) -> Result<Chan<SR, Z, C>, SR::SendChoiceErr> {
         self.sel2()
             .and_then(|c| c.sel2())
     }
@@ -290,7 +291,7 @@ impl<SR, Z, A, B, C> Chan<SR, Z, Choose<A, Choose<B, C>>> where SR: Carrier {
 /// Convenience function. This is identical to `.sel2().sel2().sel2()`
 impl<SR, Z, A, B, C, D> Chan<SR, Z, Choose<A, Choose<B, Choose<C, D>>>> where SR: Carrier {
     #[must_use]
-    pub fn skip3(self) -> Result<Chan<SR, Z, D>, SR::Err> {
+    pub fn skip3(self) -> Result<Chan<SR, Z, D>, SR::SendChoiceErr> {
         self.sel2()
             .and_then(|c| c.sel2())
             .and_then(|c| c.sel2())
@@ -300,7 +301,7 @@ impl<SR, Z, A, B, C, D> Chan<SR, Z, Choose<A, Choose<B, Choose<C, D>>>> where SR
 /// Convenience function. This is identical to `.sel2().sel2().sel2().sel2()`
 impl<SR, Z, A, B, C, D, E> Chan<SR, Z, Choose<A, Choose<B, Choose<C, Choose<D, E>>>>> where SR: Carrier {
     #[must_use]
-    pub fn skip4(self) -> Result<Chan<SR, Z, E>, SR::Err> {
+    pub fn skip4(self) -> Result<Chan<SR, Z, E>, SR::SendChoiceErr> {
         self.sel2()
             .and_then(|c| c.sel2())
             .and_then(|c| c.sel2())
@@ -312,7 +313,7 @@ impl<SR, Z, A, B, C, D, E> Chan<SR, Z, Choose<A, Choose<B, Choose<C, Choose<D, E
 impl<SR, Z, A, B, C, D, E, F>
     Chan<SR, Z, Choose<A, Choose<B, Choose<C, Choose<D, Choose<E, F>>>>>> where SR: Carrier {
     #[must_use]
-    pub fn skip5(self) -> Result<Chan<SR, Z, F>, SR::Err> {
+    pub fn skip5(self) -> Result<Chan<SR, Z, F>, SR::SendChoiceErr> {
         self.sel2()
             .and_then(|c| c.sel2())
             .and_then(|c| c.sel2())
@@ -325,7 +326,7 @@ impl<SR, Z, A, B, C, D, E, F>
 impl<SR, Z, A, B, C, D, E, F, G>
     Chan<SR, Z, Choose<A, Choose<B, Choose<C, Choose<D, Choose<E, Choose<F, G>>>>>>> where SR: Carrier {
     #[must_use]
-    pub fn skip6(self) -> Result<Chan<SR, Z, G>, SR::Err> {
+    pub fn skip6(self) -> Result<Chan<SR, Z, G>, SR::SendChoiceErr> {
         self.sel2()
             .and_then(|c| c.sel2())
             .and_then(|c| c.sel2())
@@ -339,7 +340,7 @@ impl<SR, Z, A, B, C, D, E, F, G>
 impl<SR, Z, A, B, C, D, E, F, G, H>
     Chan<SR, Z, Choose<A, Choose<B, Choose<C, Choose<D, Choose<E, Choose<F, Choose<G, H>>>>>>>> where SR: Carrier {
     #[must_use]
-    pub fn skip7(self) -> Result<Chan<SR, Z, H>, SR::Err> {
+    pub fn skip7(self) -> Result<Chan<SR, Z, H>, SR::SendChoiceErr> {
         self.sel2()
             .and_then(|c| c.sel2())
             .and_then(|c| c.sel2())
@@ -354,7 +355,7 @@ impl<SR, E, P, Q> Chan<SR, E, Offer<P, Q>> where SR: Carrier {
     /// Passive choice. This allows the other end of the channel to select one
     /// of two options for continuing the protocol: either `P` or `Q`.
     #[must_use]
-    pub fn offer(mut self) -> Result<Branch<Chan<SR, E, P>, Chan<SR, E, Q>>, SR::Err> {
+    pub fn offer(mut self) -> Result<Branch<Chan<SR, E, P>, Chan<SR, E, Q>>, SR::RecvChoiceErr> {
         match self.carrier.recv_choice() {
             Ok(true) =>
                 Ok(Left(Chan {
