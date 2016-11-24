@@ -64,31 +64,32 @@
 
 use std::marker::PhantomData;
 
+pub mod mpsc;
 pub use Branch::*;
 
 /// In order to support sending via session channel a value
 /// should implement `ChannelSend` trait.
 pub trait ChannelSend {
-    type Chan;
+    type Crr;
     type Err;
 
-    fn proceed_send(self, &mut Self::Chan) -> Result<(), Self::Err>;
+    fn send(self, carrier: &mut Self::Crr) -> Result<(), Self::Err>;
 }
 
 /// In order to support receiving via session channel a value
 /// should implement `ChannelRecv` trait.
 pub trait ChannelRecv: Sized {
-    type Chan;
+    type Crr;
     type Err;
 
-    fn proceed_recv(&mut Self::Chan) -> Result<Self, Self::Err>;
+    fn recv(&mut Self::Crr) -> Result<Self, Self::Err>;
 }
 
 pub trait Carrier: Sized {
     type Err;
 
-    fn send<T>(&mut self, value: T) -> Result<(), Self::Err> where T: ChannelSend<Chan = Self, Err = Self::Err>;
-    fn recv<T>(&mut self) -> Result<T, Self::Err> where T: ChannelRecv<Chan = Self, Err = Self::Err>;
+    // fn send<T>(&mut self, value: T) -> Result<(), Self::Err> where T: ChannelSend<Crr = Self, Err = Self::Err>;
+    // fn recv<T>(&mut self) -> Result<T, Self::Err> where T: ChannelRecv<Crr = Self, Err = Self::Err>;
 
     fn send_choice(&mut self, choice: bool) -> Result<(), Self::Err>;
     fn recv_choice(&mut self) -> Result<bool, Self::Err>;
@@ -200,12 +201,12 @@ fn close_chan<SR, E, P>(chan: Chan<SR, E, P>) {
     std::mem::forget(chan.session);
 }
 
-impl<SR, E, P, T> Chan<SR, E, Send<T, P>> where SR: Carrier, T: ChannelSend<Chan = SR, Err = SR::Err> {
+impl<SR, E, P, T> Chan<SR, E, Send<T, P>> where SR: Carrier, T: ChannelSend<Crr = SR, Err = SR::Err> {
     /// Send a value of type `T` over the channel. Returns a channel with
     /// protocol `P`
     #[must_use]
     pub fn send(mut self, v: T) -> Result<Chan<SR, E, P>, SR::Err> {
-        match self.carrier.send(v) {
+        match v.send(&mut self.carrier) {
             Ok(()) =>
                 Ok(Chan {
                     carrier: self.carrier,
@@ -219,12 +220,12 @@ impl<SR, E, P, T> Chan<SR, E, Send<T, P>> where SR: Carrier, T: ChannelSend<Chan
     }
 }
 
-impl<SR, E, P, T> Chan<SR, E, Recv<T, P>> where SR: Carrier, T: ChannelRecv<Chan = SR, Err = SR::Err> {
+impl<SR, E, P, T> Chan<SR, E, Recv<T, P>> where SR: Carrier, T: ChannelRecv<Crr = SR, Err = SR::Err> {
     /// Receives a value of type `T` from the channel. Returns a tuple
     /// containing the resulting channel and the received value.
     #[must_use]
     pub fn recv(mut self) -> Result<(Chan<SR, E, P>, T), SR::Err> {
-        match self.carrier.recv() {
+        match <T as ChannelRecv>::recv(&mut self.carrier) {
             Ok(v) =>
                 Ok((Chan {
                     carrier: self.carrier,
