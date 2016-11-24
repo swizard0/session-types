@@ -458,7 +458,7 @@ macro_rules! offer {
     (
         $id:ident, $branch:ident => $code:expr, $($t:tt)+
     ) => (
-        match $id.offer() {
+        match try!($id.offer()) {
             Left($id) => $code,
             Right($id) => offer!{ $id, $($t)+ }
         }
