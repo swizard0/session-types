@@ -185,6 +185,15 @@ impl<E, P> Drop for Session<E, P> {
     }
 }
 
+impl<SR, E, P> Chan<SR, E, P> {
+    pub fn new(carrier: SR) -> Chan<SR, E, P> {
+        Chan {
+            carrier: carrier,
+            session: Session(PhantomData),
+        }
+    }
+}
+
 impl<SR, E> Chan<SR, E, Eps> {
     /// Close a channel. Should always be used at the end of your program.
     pub fn close(self) {
