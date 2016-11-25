@@ -7,7 +7,7 @@ use std::sync::mpsc::Select;
 #[cfg(feature = "chan_select")]
 use std::collections::HashMap;
 
-use super::{ChannelSend, ChannelRecv, Carrier};
+use super::{ChannelSend, ChannelRecv, Carrier, HasDual, Chan};
 
 pub struct ChannelMPSC {
     tx: Sender<Box<u8>>,
@@ -50,6 +50,38 @@ impl Carrier for ChannelMPSC {
     fn recv_choice(&mut self) -> Result<bool, Self::RecvChoiceErr> {
         ValueMPSC::recv(self).map(|ValueMPSC(value)| value)
     }
+}
+
+/// Returns two session channels
+#[must_use]
+pub fn session_channel<P: HasDual>() -> (Chan<ChannelMPSC, (), P>, Chan<ChannelMPSC, (), P::Dual>) {
+    let (master_tx, slave_rx) = channel();
+    let (slave_tx, master_rx) = channel();
+
+    let master_carrier = ChannelMPSC {
+        tx: master_tx,
+        rx: master_rx,
+    };
+    let slave_carrier = ChannelMPSC {
+        tx: slave_tx,
+        rx: slave_rx,
+    };
+
+    (Chan::new(master_carrier),
+     Chan::new(slave_carrier))
+}
+
+/// Connect two functions using a session typed channel.
+pub fn connect<FM, FS, P>(master_fn: FM, slave_fn: FS) where
+    FM: Fn(Chan<ChannelMPSC, (), P>) + Send,
+    FS: Fn(Chan<ChannelMPSC, (), P::Dual>) + Send + 'static,
+    P: HasDual + Send + 'static,
+    <P as HasDual>::Dual: HasDual + Send + 'static
+{
+    let (master, slave) = session_channel();
+    let thread = spawn(move || slave_fn(slave));
+    master_fn(master);
+    thread.join().unwrap();
 }
 
 // /// Homogeneous select. We have a vector of channels, all obeying the same
@@ -191,31 +223,6 @@ impl Carrier for ChannelMPSC {
 //         let index = self.chans.len();
 //         self.add_offer_ret(c, index);
 //     }
-// }
-
-// /// Returns two session channels
-// #[must_use]
-// pub fn session_channel<P: HasDual>() -> (Chan<(), P>, Chan<(), P::Dual>) {
-//     let (tx1, rx1) = channel();
-//     let (tx2, rx2) = channel();
-
-//     let c1 = Chan(tx1, rx2, PhantomData);
-//     let c2 = Chan(tx2, rx1, PhantomData);
-
-//     (c1, c2)
-// }
-
-// /// Connect two functions using a session typed channel.
-// pub fn connect<F1, F2, P>(srv: F1, cli: F2)
-//     where F1: Fn(Chan<(), P>) + marker::Send + 'static,
-//           F2: Fn(Chan<(), P::Dual>) + marker::Send,
-//           P: HasDual + marker::Send + 'static,
-//           <P as HasDual>::Dual: HasDual + marker::Send + 'static
-// {
-//     let (c1, c2) = session_channel();
-//     let t = spawn(move || srv(c1));
-//     cli(c2);
-//     t.join().unwrap();
 // }
 
 // /// This macro plays the same role as the `select!` macro does for `Receiver`s.
