@@ -9,7 +9,7 @@ authors = [ "Alexey Voznyuk <me@swizard.info>"
 description = "An implementation of generic session types in Rust (next generation)"
 repository = "https://github.com/swizard0/session-types-ng"
 readme = "README.md"
-keywords = ["session", "types", "channels", "concurrency", "communication"]
+keywords = ["session", "types", "channels", "concurrency", "protocol", "communication"]
 
 license = "MIT"
 
