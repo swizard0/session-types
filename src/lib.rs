@@ -1,63 +1,6 @@
 //! session_types_ng
 //!
 //! This is an implementation of *session types* in Rust.
-//!
-//! The channels in Rusts standard library are useful for a great many things,
-//! but they're restricted to a single type. Session types allows one to use a
-//! single channel for transferring values of different types, depending on the
-//! context in which it is used. Specifically, a session typed channel always
-//! carry a *protocol*, which dictates how communication is to take place.
-//!
-//! For example, imagine that two threads, `A` and `B` want to communicate with
-//! the following pattern:
-//!
-//!  1. `A` sends an integer to `B`.
-//!  2. `B` sends a boolean to `A` depending on the integer received.
-//!
-//! With session types, this could be done by sharing a single channel. From
-//! `A`'s point of view, it would have the type `int ! (bool ? eps)` where `t ! r`
-//! is the protocol "send something of type `t` then proceed with
-//! protocol `r`", the protocol `t ? r` is "receive something of type `t` then proceed
-//! with protocol `r`, and `eps` is a special marker indicating the end of a
-//! communication session.
-//!
-//! Our session type library allows the user to create channels that adhere to a
-//! specified protocol. For example, a channel like the above would have the type
-//! `Chan<(), Send<i64, Recv<bool, Eps>>>`, and the full program could look like this:
-//!
-//! ```
-//! extern crate session_types_ng;
-//! use session_types_ng::*;
-//!
-//! type Server = Recv<i64, Send<bool, Eps>>;
-//! type Client = Send<i64, Recv<bool, Eps>>;
-//!
-//! fn srv(c: Chan<(), Server>) {
-//!     let (c, n) = c.recv();
-//!     if n % 2 == 0 {
-//!         c.send(true).close()
-//!     } else {
-//!         c.send(false).close()
-//!     }
-//! }
-//!
-//! fn cli(c: Chan<(), Client>) {
-//!     let n = 42;
-//!     let c = c.send(n);
-//!     let (c, b) = c.recv();
-//!
-//!     if b {
-//!         println!("{} is even", n);
-//!     } else {
-//!         println!("{} is odd", n);
-//!     }
-//!
-//!     c.close();
-//! }
-//!
-//! fn main() {
-//!     connect(srv, cli);
-//! }
 //! ```
 
 #![cfg_attr(feature = "chan_select", feature(mpsc_select))]
@@ -65,7 +8,6 @@
 use std::marker::PhantomData;
 
 pub mod mpsc;
-pub use Branch::*;
 
 /// In order to support sending via session channel a value
 /// should implement `ChannelSend` trait.
@@ -113,37 +55,44 @@ pub struct Chan<SR, E, P> {
 pub struct Z;
 
 /// Peano numbers: Increment
-pub struct S<N> ( PhantomData<N> );
+pub struct S<N>(PhantomData<N>);
 
-/// End of communication session (epsilon)
+/// End of communication session
 #[allow(missing_copy_implementations)]
-pub struct Eps;
+pub struct End;
 
 /// Receive `A`, then `P`
-pub struct Recv<A, P> ( PhantomData<(A, P)> );
+pub struct Recv<A, P>(PhantomData<(A, P)>);
 
 /// Send `A`, then `P`
-pub struct Send<A, P> ( PhantomData<(A, P)> );
+pub struct Send<A, P>(PhantomData<(A, P)>);
 
-/// Active choice between `P` and `Q`
-pub struct Choose<P, Q> ( PhantomData<(P, Q)> );
+/// End of a list
+#[allow(missing_copy_implementations)]
+pub struct Nil;
 
-/// Passive choice (offer) between `P` and `Q`
-pub struct Offer<P, Q> ( PhantomData<(P, Q)> );
+/// More elements to follow
+pub struct More<P>(PhantomData<P>);
+
+/// Active choice between `P` and protocols in the list `L`
+pub struct Choose<P, L>(PhantomData<(P, L)>);
+
+/// Passive choice (offer) between `P` and protocols in the list `L`
+pub struct Offer<P, L>(PhantomData<(P, L)>);
 
 /// Enter a recursive environment
-pub struct Rec<P> ( PhantomData<P> );
+pub struct Rec<P>(PhantomData<P>);
 
 /// Recurse. N indicates how many layers of the recursive environment we recurse
 /// out of.
-pub struct Var<N> ( PhantomData<N> );
+pub struct Var<N>(PhantomData<N>);
 
 pub unsafe trait HasDual {
     type Dual;
 }
 
-unsafe impl HasDual for Eps {
-    type Dual = Eps;
+unsafe impl HasDual for End {
+    type Dual = End;
 }
 
 unsafe impl<A, P: HasDual> HasDual for Send<A, P> {
@@ -154,12 +103,20 @@ unsafe impl<A, P: HasDual> HasDual for Recv<A, P> {
     type Dual = Send<A, P::Dual>;
 }
 
-unsafe impl<P: HasDual, Q: HasDual> HasDual for Choose<P, Q> {
-    type Dual = Offer<P::Dual, Q::Dual>;
+unsafe impl HasDual for Nil {
+    type Dual = Nil;
 }
 
-unsafe impl<P: HasDual, Q: HasDual> HasDual for Offer<P, Q> {
-    type Dual = Choose<P::Dual, Q::Dual>;
+unsafe impl<P: HasDual> HasDual for More<P> {
+    type Dual = More<P::Dual>;
+}
+
+unsafe impl<P: HasDual, L: HasDual> HasDual for Choose<P, L> {
+    type Dual = Offer<P::Dual, L::Dual>;
+}
+
+unsafe impl<P: HasDual, L: HasDual> HasDual for Offer<P, L> {
+    type Dual = Choose<P::Dual, L::Dual>;
 }
 
 unsafe impl HasDual for Var<Z> {
@@ -172,11 +129,6 @@ unsafe impl<N> HasDual for Var<S<N>> {
 
 unsafe impl<P: HasDual> HasDual for Rec<P> {
     type Dual = Rec<P::Dual>;
-}
-
-pub enum Branch<L, R> {
-    Left(L),
-    Right(R)
 }
 
 impl<E, P> Drop for Session<E, P> {
@@ -194,7 +146,7 @@ impl<SR, E, P> Chan<SR, E, P> {
     }
 }
 
-impl<SR, E> Chan<SR, E, Eps> {
+impl<SR, E> Chan<SR, E, End> {
     /// Close a channel. Should always be used at the end of your program.
     pub fn close(self) {
         // This method cleans up the channel without running the panicky destructor for `Session`
@@ -246,10 +198,10 @@ impl<SR, E, P, T> Chan<SR, E, Recv<T, P>> where SR: Carrier, T: ChannelRecv<Crr 
     }
 }
 
-impl<SR, E, P, Q> Chan<SR, E, Choose<P, Q>> where SR: Carrier {
-    /// Perform an active choice, selecting protocol `P`.
+impl<SR, E, P, L> Chan<SR, E, Choose<P, L>> where SR: Carrier {
+    /// Perform an active choice, selecting protocol `P` (head of the choose list).
     #[must_use]
-    pub fn sel1(mut self) -> Result<Chan<SR, E, P>, SR::SendChoiceErr> {
+    pub fn head(mut self) -> Result<Chan<SR, E, P>, SR::SendChoiceErr> {
         match self.carrier.send_choice(true) {
             Ok(()) =>
                 Ok(Chan {
@@ -262,10 +214,12 @@ impl<SR, E, P, Q> Chan<SR, E, Choose<P, Q>> where SR: Carrier {
             },
         }
     }
+}
 
-    /// Perform an active choice, selecting protocol `Q`.
+impl<SR, E, P, Q, L> Chan<SR, E, Choose<P, More<Choose<Q, L>>>> where SR: Carrier {
+     /// Perform an active choice, skipping the first element of the choose list.
     #[must_use]
-    pub fn sel2(mut self) -> Result<Chan<SR, E, Q>, SR::SendChoiceErr> {
+    pub fn tail(mut self) -> Result<Chan<SR, E, Choose<Q, L>>, SR::SendChoiceErr> {
         match self.carrier.send_choice(false) {
             Ok(()) =>
                 Ok(Chan {
@@ -280,106 +234,112 @@ impl<SR, E, P, Q> Chan<SR, E, Choose<P, Q>> where SR: Carrier {
     }
 }
 
-/// Convenience function. This is identical to `.sel2()`
-impl<SR, Z, A, B> Chan<SR, Z, Choose<A, B>> where SR: Carrier {
+/// Convenience function. This is identical to `.tail()`
+impl<SR, Z, P, Q, L> Chan<SR, Z, Choose<P, More<Choose<Q, L>>>> where SR: Carrier {
     #[must_use]
-    pub fn skip(self) -> Result<Chan<SR, Z, B>, SR::SendChoiceErr> {
-        self.sel2()
+    pub fn skip(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
+        self.tail()
     }
 }
 
-/// Convenience function. This is identical to `.sel2().sel2()`
-impl<SR, Z, A, B, C> Chan<SR, Z, Choose<A, Choose<B, C>>> where SR: Carrier {
+/// Convenience function. This is identical to `.tail().tail()`
+impl<SR, Z, PA, PB, Q, L> Chan<SR, Z, Choose<PA, More<Choose<PB, More<Choose<Q, L>>>>>> where SR: Carrier {
     #[must_use]
-    pub fn skip2(self) -> Result<Chan<SR, Z, C>, SR::SendChoiceErr> {
-        self.sel2()
-            .and_then(|c| c.sel2())
+    pub fn skip2(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
+        self.tail().and_then(|c| c.tail())
     }
 }
 
-/// Convenience function. This is identical to `.sel2().sel2().sel2()`
-impl<SR, Z, A, B, C, D> Chan<SR, Z, Choose<A, Choose<B, Choose<C, D>>>> where SR: Carrier {
+/// Convenience function. This is identical to `.tail().tail().tail()`
+impl<SR, Z, PA, PB, PC, Q, L> Chan<SR, Z, Choose<PA, More<Choose<PB, More<Choose<PC, More<Choose<Q, L>>>>>>>> where SR: Carrier {
     #[must_use]
-    pub fn skip3(self) -> Result<Chan<SR, Z, D>, SR::SendChoiceErr> {
-        self.sel2()
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
+    pub fn skip3(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
+        self.skip2().and_then(|c| c.tail())
     }
 }
 
-/// Convenience function. This is identical to `.sel2().sel2().sel2().sel2()`
-impl<SR, Z, A, B, C, D, E> Chan<SR, Z, Choose<A, Choose<B, Choose<C, Choose<D, E>>>>> where SR: Carrier {
+/// Convenience function. This is identical to `.tail().tail().tail().tail()`
+impl<SR, Z, PA, PB, PC, PD, Q, L>
+    Chan<SR, Z, Choose<PA, More<Choose<PB, More<Choose<PC, More<Choose<PD, More<Choose<Q, L>>>>>>>>>> where SR: Carrier
+{
     #[must_use]
-    pub fn skip4(self) -> Result<Chan<SR, Z, E>, SR::SendChoiceErr> {
-        self.sel2()
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
+    pub fn skip4(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
+        self.skip3().and_then(|c| c.tail())
     }
 }
 
-/// Convenience function. This is identical to `.sel2().sel2().sel2().sel2().sel2()`
-impl<SR, Z, A, B, C, D, E, F>
-    Chan<SR, Z, Choose<A, Choose<B, Choose<C, Choose<D, Choose<E, F>>>>>> where SR: Carrier {
+enum BranchM<SR, E, P, T> where SR: Carrier {
+    Car(T),
+    Cdr(Chan<SR, E, P>),
+    Error(SR::RecvChoiceErr),
+}
+
+pub struct Offers<SR, E, P, T>(BranchM<SR, E, P, T>) where SR: Carrier;
+
+impl<SR, E, P, L> Chan<SR, E, Offer<P, L>> where SR: Carrier {
+    /// Passive choice. This allows the other end of the channel to navigate
+    /// the given list of options.
     #[must_use]
-    pub fn skip5(self) -> Result<Chan<SR, Z, F>, SR::SendChoiceErr> {
-        self.sel2()
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
+    pub fn offer<T>(self) -> Offers<SR, E, Offer<P, L>, T> {
+        Offers(BranchM::Cdr(self))
     }
 }
 
-/// Convenience function.
-impl<SR, Z, A, B, C, D, E, F, G>
-    Chan<SR, Z, Choose<A, Choose<B, Choose<C, Choose<D, Choose<E, Choose<F, G>>>>>>> where SR: Carrier {
+impl<SR, E, P, Q, L, T> Offers<SR, E, Offer<P, More<Offer<Q, L>>>, T> where SR: Carrier {
     #[must_use]
-    pub fn skip6(self) -> Result<Chan<SR, Z, G>, SR::SendChoiceErr> {
-        self.sel2()
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
+    pub fn option<F>(self, mut handler: F) -> Offers<SR, E, Offer<Q, L>, T>
+        where F: FnMut(Chan<SR, E, P>) -> T
+    {
+        match self.0 {
+            BranchM::Car(value) =>
+                Offers(BranchM::Car(value)),
+            BranchM::Cdr(mut chan) =>
+                match chan.carrier.recv_choice() {
+                    Ok(true) =>
+                        Offers(BranchM::Car(handler(Chan {
+                            carrier: chan.carrier,
+                            session: Session(PhantomData),
+                        }))),
+                    Ok(false) =>
+                        Offers(BranchM::Cdr(Chan {
+                            carrier: chan.carrier,
+                            session: Session(PhantomData),
+                        })),
+                    Err(e) => {
+                        close_chan(chan);
+                        Offers(BranchM::Error(e))
+                    },
+                },
+            BranchM::Error(err) =>
+                Offers(BranchM::Error(err)),
+        }
     }
 }
 
-/// Convenience function.
-impl<SR, Z, A, B, C, D, E, F, G, H>
-    Chan<SR, Z, Choose<A, Choose<B, Choose<C, Choose<D, Choose<E, Choose<F, Choose<G, H>>>>>>>> where SR: Carrier {
+impl<SR, E, P, T> Offers<SR, E, Offer<P, Nil>, T> where SR: Carrier {
     #[must_use]
-    pub fn skip7(self) -> Result<Chan<SR, Z, H>, SR::SendChoiceErr> {
-        self.sel2()
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
-            .and_then(|c| c.sel2())
-    }
-}
-
-impl<SR, E, P, Q> Chan<SR, E, Offer<P, Q>> where SR: Carrier {
-    /// Passive choice. This allows the other end of the channel to select one
-    /// of two options for continuing the protocol: either `P` or `Q`.
-    #[must_use]
-    pub fn offer(mut self) -> Result<Branch<Chan<SR, E, P>, Chan<SR, E, Q>>, SR::RecvChoiceErr> {
-        match self.carrier.recv_choice() {
-            Ok(true) =>
-                Ok(Left(Chan {
-                    carrier: self.carrier,
-                    session: Session(PhantomData),
-                })),
-            Ok(false) =>
-                Ok(Right(Chan {
-                    carrier: self.carrier,
-                    session: Session(PhantomData),
-                })),
-            Err(e) => {
-                close_chan(self);
-                Err(e)
-            },
+    pub fn option<F>(self, mut handler: F) -> Result<T, SR::RecvChoiceErr>
+        where F: FnMut(Chan<SR, E, P>) -> T
+    {
+        match self.0 {
+            BranchM::Car(value) =>
+                Ok(value),
+            BranchM::Cdr(mut chan) =>
+                match chan.carrier.recv_choice() {
+                    Ok(true) =>
+                        Ok(handler(Chan {
+                            carrier: chan.carrier,
+                            session: Session(PhantomData),
+                        })),
+                    Ok(false) =>
+                        panic!("session protocol offer list out of range"),
+                    Err(e) => {
+                        close_chan(chan);
+                        Err(e)
+                    },
+                },
+            BranchM::Error(err) =>
+                Err(err),
         }
     }
 }
@@ -416,64 +376,4 @@ impl<SR, E, P, N> Chan<SR, (P, E), Var<S<N>>> {
             session: Session(PhantomData),
         }
     }
-}
-
-/// This macro is convenient for server-like protocols of the form:
-///
-/// `Offer<A, Offer<B, Offer<C, ... >>>`
-///
-/// # Examples
-///
-/// Assume we have a protocol `Offer<Recv<u64, Eps>, Offer<Recv<String, Eps>,Eps>>>`
-/// we can use the `offer!` macro as follows:
-///
-/// ```rust
-/// #[macro_use] extern crate session_types_ng;
-/// use session_types_ng::*;
-/// use std::thread::spawn;
-///
-/// fn srv(c: Chan<(), Offer<Recv<u64, Eps>, Offer<Recv<String, Eps>, Eps>>>) {
-///     offer! { c,
-///         Number => {
-///             let (c, n) = c.recv();
-///             assert_eq!(42, n);
-///             c.close();
-///         },
-///         String => {
-///             c.recv().0.close();
-///         },
-///         Quit => {
-///             c.close();
-///         }
-///     }
-/// }
-///
-/// fn cli(c: Chan<(), Choose<Send<u64, Eps>, Choose<Send<String, Eps>, Eps>>>) {
-///     c.sel1().send(42).close();
-/// }
-///
-/// fn main() {
-///     let (s, c) = session_channel();
-///     spawn(move|| cli(c));
-///     srv(s);
-/// }
-/// ```
-///
-/// The identifiers on the left-hand side of the arrows have no semantic
-/// meaning, they only provide a meaningful name for the reader.
-#[macro_export]
-macro_rules! offer {
-    (
-        $id:ident, $branch:ident => $code:expr, $($t:tt)+
-    ) => (
-        match try!($id.offer()) {
-            Left($id) => $code,
-            Right($id) => offer!{ $id, $($t)+ }
-        }
-    );
-    (
-        $id:ident, $branch:ident => $code:expr
-    ) => (
-        $code
-    )
 }
