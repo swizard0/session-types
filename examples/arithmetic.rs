@@ -1,7 +1,6 @@
 // This is an implementation of the extended arithmetic server from
 // Vasconcelos-Gay-Ravara (2006) with some additional functionality
 
-#[macro_use]
 extern crate session_types_ng;
 
 use std::marker;

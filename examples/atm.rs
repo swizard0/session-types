@@ -1,4 +1,4 @@
-#[macro_use] extern crate session_types_ng;
+extern crate session_types_ng;
 
 use std::thread::spawn;
 use std::sync::mpsc::{SendError, RecvError};
