@@ -1,14 +1,15 @@
 extern crate session_types_ng;
+
 use session_types_ng::*;
 
-fn server(c: Chan<(), Eps>) {
+fn server(c: Chan<mpsc::Channel, (), End>) {
     c.close()
 }
 
-fn client(c: Chan<(), Eps>) {
+fn client(c: Chan<mpsc::Channel, (), End>) {
     c.close()
 }
 
 fn main() {
-    connect(server, client);
+    mpsc::connect(server, client);
 }
