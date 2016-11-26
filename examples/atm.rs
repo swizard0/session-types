@@ -1,18 +1,23 @@
 #[macro_use] extern crate session_types_ng;
-use session_types_ng::*;
+
 use std::thread::spawn;
+use std::sync::mpsc::{SendError, RecvError};
+
+use session_types_ng::*;
+use session_types_ng::mpsc::Value;
 
 type Id = String;
-type Atm = Recv<Id, Choose<Rec<AtmInner>, Eps>>;
+type Atm = Recv<Value<Id>, Choose<Rec<AtmInner>, More<Choose<End, Nil>>>>;
 
-type AtmInner = Offer<AtmDeposit,
-                Offer<AtmWithdraw,
-                Offer<AtmBalance,
-                      Eps>>>;
+type AtmInner =
+    Offer<AtmDeposit, More<
+    Offer<AtmWithdraw, More<
+    Offer<AtmBalance, More<
+    Offer<End, Nil>>>>>>>;
 
-type AtmDeposit = Recv<u64, Send<u64, Var<Z>>>;
-type AtmWithdraw = Recv<u64, Choose<Var<Z>, Var<Z>>>;
-type AtmBalance = Send<u64, Var<Z>>;
+type AtmDeposit = Recv<Value<u64>, Send<Value<u64>, Var<Z>>>;
+type AtmWithdraw = Recv<Value<u64>, Choose<Var<Z>, More<Choose<Var<Z>, Nil>>>>;
+type AtmBalance = Send<Value<u64>, Var<Z>>;
 
 type Client = <Atm as HasDual>::Dual;
 
@@ -20,80 +25,167 @@ fn approved(id: &Id) -> bool {
     !id.is_empty()
 }
 
-fn atm(c: Chan<(), Atm>) {
-    let mut c = {
-        let (c, id) = c.recv();
+type SendChoiceError = SendError<Box<bool>>;
+type RecvChoiceError = RecvError;
+type SendAmountError = SendError<Box<u64>>;
+type RecvOfferError = RecvError;
+type SendIdError = SendError<Box<Id>>;
+
+#[derive(Debug)]
+enum AtmError {
+    RecvId(RecvError),
+    FailChooseId(SendChoiceError),
+    SuccessChooseId(SendChoiceError),
+    RecvDeposit(RecvError),
+    SendDepositBalance(SendAmountError),
+    RecvWithdraw(RecvError),
+    FailChooseWithdraw(SendChoiceError),
+    SuccessChooseWithdraw(SendChoiceError),
+    SendBalance(SendAmountError),
+    OfferAtm(RecvOfferError),
+}
+
+fn atm(chan: Chan<mpsc::Channel, (), Atm>) -> Result<(), AtmError> {
+    let mut chan = {
+        let (chan, Value(id)) = chan.recv().map_err(AtmError::RecvId)?;
         if !approved(&id) {
-            c.sel2().close();
-            return;
+            chan
+                .tail().map_err(AtmError::FailChooseId)?
+                .head().map_err(AtmError::FailChooseId)?
+                .close();
+            return Ok(());
         }
-        c.sel1().enter()
+        chan.head().map_err(AtmError::SuccessChooseId)?.enter()
     };
+
     let mut balance = 0;
     loop {
-        c = offer! {
-            c,
-            Deposit => {
-                let (c, amt) = c.recv();
+        enum Action {
+            Stop,
+            Next(Chan<mpsc::Channel, (AtmInner, ()), AtmInner>),
+        }
+
+        let action = chan
+            .offer()
+            .option(|chan_deposit| {
+                let (chan, Value(amt)) = chan_deposit.recv().map_err(AtmError::RecvDeposit)?;
                 balance += amt;
-                c.send(balance).zero()
-            },
-            Withdraw => {
-                let (c, amt) = c.recv();
-                if amt > balance {
-                    c.sel2().zero()
-                } else {
-                    balance -= amt;
-                    c.sel1().zero()
-                }
-            },
-            Balance => {
-                c.send(balance).zero()
-            },
-            Quit => {
-                c.close();
-                break
-            }
-        }
+                let chan = chan.send(Value(balance)).map_err(AtmError::SendDepositBalance)?.zero();
+                Ok(Action::Next(chan))
+            })
+            .option(|chan_withdraw| {
+                let (chan, Value(amt)) = chan_withdraw.recv().map_err(AtmError::RecvWithdraw)?;
+                let chan =
+                    if amt > balance {
+                        chan
+                            .tail().map_err(AtmError::FailChooseWithdraw)?
+                            .head().map_err(AtmError::FailChooseWithdraw)?
+                            .zero()
+                    } else {
+                        balance -= amt;
+                        chan.head().map_err(AtmError::SuccessChooseWithdraw)?.zero()
+                    };
+                Ok(Action::Next(chan))
+            })
+            .option(|chan_balance| {
+                let chan = chan_balance.send(Value(balance)).map_err(AtmError::SendBalance)?.zero();
+                Ok(Action::Next(chan))
+            })
+            .option(|chan_quit| {
+                chan_quit.close();
+                Ok(Action::Stop)
+            })
+            .map_err(AtmError::OfferAtm)??;
+
+        match action {
+            Action::Stop =>
+                return Ok(()),
+            Action::Next(next_chan) =>
+                chan = next_chan,
+        };
     }
 }
 
-fn deposit_client(c: Chan<(), Client>) {
-    let c = match c.send("Deposit Client".to_string()).offer() {
-        Left(c) => c.enter(),
-        Right(_) => panic!("deposit_client: expected to be approved")
-    };
+#[derive(Debug)]
+enum ClientError {
+    SendId(SendIdError),
+    LoginFailed(&'static str),
+    OfferClient(RecvOfferError),
+    FailChooseDeposit(SendChoiceError),
+    SendDeposit(SendAmountError),
+    RecvBalance(RecvError),
+    FailChooseQuit(SendChoiceError),
+    FailChooseWithdraw(SendChoiceError),
+    SendWithdraw(SendAmountError),
+}
 
-    let (c, new_balance) = c.sel1().send(200).recv();
+fn login_client(chan: Chan<mpsc::Channel, (), Client>, login: &str) ->
+    Result<Chan<mpsc::Channel, (<AtmInner as HasDual>::Dual, ()), <AtmInner as HasDual>::Dual>, ClientError>
+{
+    let chan = chan
+        .send(Value(login.to_string())).map_err(ClientError::SendId)?
+        .offer()
+        .option(|chan_success| Ok(chan_success.enter()))
+        .option(|chan_fail| {
+            chan_fail.close();
+            Err(ClientError::LoginFailed("expected to be approved"))
+        })
+        .map_err(ClientError::OfferClient)??;
+    Ok(chan)
+}
+
+fn deposit_client(chan: Chan<mpsc::Channel, (), Client>) -> Result<(), ClientError> {
+    let chan = login_client(chan, "Deposit Client")?;
+    let (chan, Value(new_balance)) = chan
+        .head().map_err(ClientError::FailChooseDeposit)?
+        .send(Value(200)).map_err(ClientError::SendDeposit)?
+        .recv().map_err(ClientError::RecvBalance)?;
     println!("deposit_client: new balance: {}", new_balance);
-    c.zero().skip3().close();
+    chan.zero()
+        .skip3().map_err(ClientError::FailChooseQuit)?
+        .head().map_err(ClientError::FailChooseQuit)?
+        .close();
+    Ok(())
 }
 
-fn withdraw_client(c: Chan<(), Client>) {
-    let c = match c.send("Withdraw Client".to_string()).offer() {
-        Left(c) => c.enter(),
-        Right(_) => panic!("withdraw_client: expected to be approved")
-    };
-
-    match c.sel2().sel1().send(100).offer() {
-        Left(c) => {
-            println!("withdraw_client: Successfully withdrew 100");
-            c.zero().skip3().close();
-        }
-        Right(c) => {
-            println!("withdraw_client: Could not withdraw. Depositing instead.");
-            c.zero().sel1().send(50).recv().0.zero().skip3().close();
-        }
-    }
+fn withdraw_client(chan: Chan<mpsc::Channel, (), Client>) -> Result<(), ClientError> {
+    login_client(chan, "Withdraw Client")?
+        .tail().map_err(ClientError::FailChooseWithdraw)?
+        .head().map_err(ClientError::FailChooseWithdraw)?
+        .send(Value(100)).map_err(ClientError::SendWithdraw)?
+        .offer()
+        .option(|chan_success| {
+            println!("withdraw_client: successfully withdrew 100");
+            chan_success
+                .zero()
+                .skip3().map_err(ClientError::FailChooseQuit)?
+                .head().map_err(ClientError::FailChooseQuit)?
+                .close();
+            Ok(())
+        })
+        .option(|chan_fail| {
+            println!("withdraw_client: could not withdraw. Depositing instead.");
+            chan_fail
+                .zero()
+                .head().map_err(ClientError::FailChooseDeposit)?
+                .send(Value(50)).map_err(ClientError::SendDeposit)?
+                .recv().map_err(ClientError::RecvBalance)?
+                .0
+                .zero()
+                .skip3().map_err(ClientError::FailChooseQuit)?
+                .head().map_err(ClientError::FailChooseQuit)?
+                .close();
+            Ok(())
+        })
+        .map_err(ClientError::OfferClient)?
 }
 
 fn main() {
-    let (atm_chan, client_chan) = session_channel();
-    spawn(|| atm(atm_chan));
-    deposit_client(client_chan);
+    let (atm_chan, client_chan) = mpsc::session_channel();
+    spawn(|| atm(atm_chan).unwrap());
+    deposit_client(client_chan).unwrap();
 
-    let (atm_chan, client_chan) = session_channel();
-    spawn(|| atm(atm_chan));
-    withdraw_client(client_chan);
-
+    let (atm_chan, client_chan) = mpsc::session_channel();
+    spawn(|| atm(atm_chan).unwrap());
+    withdraw_client(client_chan).unwrap();
 }
