@@ -1,41 +1,42 @@
 /// This is an implementation of an echo server.
-
 /// One process reads input and sends it to the other process, which outputs it.
-
-#[macro_use]
 extern crate session_types_ng;
+
 use session_types_ng::*;
 
-use std::thread::spawn;
+type Srv = Offer<End, More<Offer<Recv<mpsc::Value<String>, Var<Z>>, Nil>>>;
 
-type Srv = Offer<Eps, Recv<String, Var<Z>>>;
-fn srv(c: Chan<(), Rec<Srv>>) {
-
-    let mut c = c.enter();
-
+fn srv(chan: Chan<mpsc::Channel, (), Rec<Srv>>) {
+    let mut chan = chan.enter();
     loop {
-        c = offer!{ c,
-            CLOSE => {
+        let maybe_chan = chan
+            .offer()
+            .option(|chan_close| {
                 println!("Closing server.");
-                c.close();
-                break
-            },
-            RECV => {
-                let (c, s) = c.recv();
+                chan_close.close();
+                None
+            })
+            .option(|chan_recv| {
+                let (chan, mpsc::Value(s)) = chan_recv.recv().unwrap();
                 println!("Received: {}", s);
-                c.zero()
-            }
-        };
+                Some(chan.zero())
+            })
+            .unwrap();
+        if let Some(next_chan) = maybe_chan {
+            chan = next_chan;
+        } else {
+            break;
+        }
     }
 }
 
 type Cli = <Srv as HasDual>::Dual;
-fn cli(c: Chan<(), Rec<Cli>>) {
 
+fn cli(chan: Chan<mpsc::Channel, (), Rec<Cli>>) {
     let stdin = std::io::stdin();
     let mut count = 0usize;
 
-    let mut c = c.enter();
+    let mut chan = chan.enter();
     let mut buf = "".to_string();
     loop {
         stdin.read_line(&mut buf).ok().unwrap();
@@ -44,13 +45,22 @@ fn cli(c: Chan<(), Rec<Cli>>) {
         }
         match &buf[..] {
             "q" => {
-                let c = c.sel2().send(format!("{} lines sent", count));
-                c.zero().sel1().close();
+                chan
+                    .tail().unwrap()
+                    .head().unwrap()
+                    .send(mpsc::Value(format!("{} lines sent", count))).unwrap()
+                    .zero()
+                    .head().unwrap()
+                    .close();
                 println!("Client quitting");
                 break;
             }
             _ => {
-                c = c.sel2().send(buf.clone()).zero();
+                chan = chan
+                    .tail().unwrap()
+                    .head().unwrap()
+                    .send(mpsc::Value(buf.clone())).unwrap()
+                    .zero();
                 buf.clear();
                 count += 1;
             }
@@ -59,7 +69,5 @@ fn cli(c: Chan<(), Rec<Cli>>) {
 }
 
 fn main() {
-    let (c1, c2) = session_channel();
-    spawn(move || srv(c1));
-    cli(c2);
+    mpsc::connect(srv, cli);
 }
