@@ -70,19 +70,24 @@ fn server(chan: Chan<mpsc::Channel, (), Rec<Srv>>) {
     }
 }
 
-// // `add_client`, `neg_client` and `sqrt_client` are all pretty straightforward
-// // uses of session types, but they do showcase subtyping, recursion and how to
-// // work the types in general.
+// `add_client`, `neg_client` and `sqrt_client` are all pretty straightforward
+// uses of session types, but they do showcase subtyping, recursion and how to
+// work the types in general.
 
-// type AddCli<R> =
-//     Choose<Eps,
-//     Choose<Send<i64, Send<i64, Recv<i64, Var<Z>>>>, R>>;
+type AddCli<R> =
+    Choose<End, More<
+    Choose<Send<mpsc::Value<i64>, Send<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Var<Z>>>>, R>>>;
 
-// fn add_client<R>(c: Chan<mpsc::Channel, (), Rec<AddCli<R>>>) {
-//     let (c, n) = c.enter().sel2().sel1().send(42).send(1).recv();
-//     println!("{}", n);
-//     c.zero().sel1().close()
-// }
+fn add_client<R>(c: Chan<mpsc::Channel, (), Rec<AddCli<R>>>) {
+    let (c, mpsc::Value(n)) = c.enter()
+        .tail().unwrap()
+        .head().unwrap()
+        .send(mpsc::Value(42)).unwrap()
+        .send(mpsc::Value(1)).unwrap()
+        .recv().unwrap();
+    println!("{}", n);
+    c.zero().head().unwrap().close()
+}
 
 // type NegCli<R, S> =
 //     Choose<Eps,
@@ -174,7 +179,7 @@ fn server(chan: Chan<mpsc::Channel, (), Rec<Srv>>) {
 // }
 
 fn main() {
-    // mpsc::connect(server, add_client);
+    mpsc::connect(server, add_client);
     // mpsc::connect(server, neg_client);
     // mpsc::connect(server, sqrt_client);
     // mpsc::connect(server, fn_client);
