@@ -160,6 +160,14 @@ fn close_chan<SR, E, P>(chan: Chan<SR, E, P>) {
     std::mem::forget(chan.session);
 }
 
+fn cast_chan<SR, EA, EB, PA, PB>(chan: Chan<SR, EA, PA>) -> Chan<SR, EB, PB> {
+    std::mem::forget(chan.session);
+    Chan {
+        carrier: chan.carrier,
+        session: Session(PhantomData),
+    }
+}
+
 impl<SR, E, P, T> Chan<SR, E, Send<T, P>> where SR: Carrier, T: ChannelSend<Crr = SR> {
     /// Send a value of type `T` over the channel. Returns a channel with
     /// protocol `P`
@@ -167,10 +175,7 @@ impl<SR, E, P, T> Chan<SR, E, Send<T, P>> where SR: Carrier, T: ChannelSend<Crr 
     pub fn send(mut self, v: T) -> Result<Chan<SR, E, P>, T::Err> {
         match v.send(&mut self.carrier) {
             Ok(()) =>
-                Ok(Chan {
-                    carrier: self.carrier,
-                    session: Session(PhantomData),
-                }),
+                Ok(cast_chan(self)),
             Err(e) => {
                 close_chan(self);
                 Err(e)
@@ -186,10 +191,7 @@ impl<SR, E, P, T> Chan<SR, E, Recv<T, P>> where SR: Carrier, T: ChannelRecv<Crr 
     pub fn recv(mut self) -> Result<(Chan<SR, E, P>, T), T::Err> {
         match <T as ChannelRecv>::recv(&mut self.carrier) {
             Ok(v) =>
-                Ok((Chan {
-                    carrier: self.carrier,
-                    session: Session(PhantomData),
-                }, v)),
+                Ok((cast_chan(self), v)),
             Err(e) => {
                 close_chan(self);
                 Err(e)
@@ -204,10 +206,7 @@ impl<SR, E, P, L> Chan<SR, E, Choose<P, L>> where SR: Carrier {
     pub fn head(mut self) -> Result<Chan<SR, E, P>, SR::SendChoiceErr> {
         match self.carrier.send_choice(true) {
             Ok(()) =>
-                Ok(Chan {
-                    carrier: self.carrier,
-                    session: Session(PhantomData),
-                }),
+                Ok(cast_chan(self)),
             Err(e) => {
                 close_chan(self);
                 Err(e)
@@ -222,10 +221,7 @@ impl<SR, E, P, Q, L> Chan<SR, E, Choose<P, More<Choose<Q, L>>>> where SR: Carrie
     pub fn tail(mut self) -> Result<Chan<SR, E, Choose<Q, L>>, SR::SendChoiceErr> {
         match self.carrier.send_choice(false) {
             Ok(()) =>
-                Ok(Chan {
-                    carrier: self.carrier,
-                    session: Session(PhantomData),
-                }),
+                Ok(cast_chan(self)),
             Err(e) => {
                 close_chan(self);
                 Err(e)
@@ -296,15 +292,9 @@ impl<SR, E, P, Q, L, T> Offers<SR, E, Offer<P, More<Offer<Q, L>>>, T> where SR: 
             BranchM::Cdr(mut chan) =>
                 match chan.carrier.recv_choice() {
                     Ok(true) =>
-                        Offers(BranchM::Car(handler(Chan {
-                            carrier: chan.carrier,
-                            session: Session(PhantomData),
-                        }))),
+                        Offers(BranchM::Car(handler(cast_chan(chan)))),
                     Ok(false) =>
-                        Offers(BranchM::Cdr(Chan {
-                            carrier: chan.carrier,
-                            session: Session(PhantomData),
-                        })),
+                        Offers(BranchM::Cdr(cast_chan(chan))),
                     Err(e) => {
                         close_chan(chan);
                         Offers(BranchM::Error(e))
@@ -327,10 +317,7 @@ impl<SR, E, P, T> Offers<SR, E, Offer<P, Nil>, T> where SR: Carrier {
             BranchM::Cdr(mut chan) =>
                 match chan.carrier.recv_choice() {
                     Ok(true) =>
-                        Ok(handler(Chan {
-                            carrier: chan.carrier,
-                            session: Session(PhantomData),
-                        })),
+                        Ok(handler(cast_chan(chan))),
                     Ok(false) =>
                         panic!("session protocol offer list out of range"),
                     Err(e) => {
@@ -349,10 +336,7 @@ impl<SR, E, P> Chan<SR, E, Rec<P>> {
     /// top of the environment stack.
     #[must_use]
     pub fn enter(self) -> Chan<SR, (P, E), P> {
-        Chan {
-            carrier: self.carrier,
-            session: Session(PhantomData),
-        }
+        cast_chan(self)
     }
 }
 
@@ -360,10 +344,7 @@ impl<SR, E, P> Chan<SR, (P, E), Var<Z>> {
     /// Recurse to the environment on the top of the environment stack.
     #[must_use]
     pub fn zero(self) -> Chan<SR, (P, E), P> {
-        Chan {
-            carrier: self.carrier,
-            session: Session(PhantomData),
-        }
+        cast_chan(self)
     }
 }
 
@@ -371,9 +352,6 @@ impl<SR, E, P, N> Chan<SR, (P, E), Var<S<N>>> {
     /// Pop the top environment from the environment stack.
     #[must_use]
     pub fn succ(self) -> Chan<SR, E, Var<N>> {
-        Chan {
-            carrier: self.carrier,
-            session: Session(PhantomData),
-        }
+        cast_chan(self)
     }
 }
