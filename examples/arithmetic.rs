@@ -156,38 +156,41 @@ fn fn_client<R, S, T>(chan: Chan<mpsc::Channel, (), Rec<PrimeCli<R, S, T>>>) {
     chan.zero().head().unwrap().close();
 }
 
+// `ask_neg` and `get_neg` use delegation, that is, sending a channel over
+// another channel.
 
-// // `ask_neg` and `get_neg` use delegation, that is, sending a channel over
-// // another channel.
+// `ask_neg` selects the negation operation and sends an integer, whereafter it
+// sends the whole channel to `get_neg`. `get_neg` then receives the negated
+// integer and prints it.
 
-// // `ask_neg` selects the negation operation and sends an integer, whereafter it
-// // sends the whole channel to `get_neg`. `get_neg` then receives the negated
-// // integer and prints it.
+type AskNeg<R, S> =
+    Choose<End, More<
+    Choose<R, More<
+    Choose<Send<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Var<Z>>>, S>>>>>;
 
-// type AskNeg<R, S> =
-//     Choose<Eps,
-//     Choose<R,
-//     Choose<Send<i64, Recv<i64, Var<Z>>>,
-//     S>>>;
+type DelegChanSend<R, S> =
+    Send<mpsc::Value<Chan<mpsc::Channel, (AskNeg<R, S>, ()), Recv<mpsc::Value<i64>, Var<Z>>>>, End>;
 
+fn ask_neg<R, S>(c1: Chan<mpsc::Channel, (), Rec<AskNeg<R, S>>>,
+                 c2: Chan<mpsc::Channel, (), DelegChanSend<R, S>>)
+    where R: marker::Send + 'static, S: marker::Send + 'static
+{
+    let c1 = c1.enter().skip2().unwrap().head().unwrap().send(mpsc::Value(42)).unwrap();
+    c2.send(mpsc::Value(c1)).unwrap().close();
+}
 
-// fn ask_neg<R, S>(c1: Chan<mpsc::Channel, (), Rec<AskNeg<R, S>>>,
-//                  c2: Chan<mpsc::Channel, (), Send<Chan<mpsc::Channel, (AskNeg<R, S>, ()), Recv<i64, Var<Z>>>, Eps>>) where
-//     R: marker::Send + 'static, S: marker::Send + 'static
-// {
-//     let c1 = c1.enter().sel2().sel2().sel1().send(42);
-//     c2.send(c1).close();
-// }
+type DelegChanRecv<R, S> =
+    Recv<mpsc::Value<Chan<mpsc::Channel, (AskNeg<R, S>, ()), Recv<mpsc::Value<i64>, Var<Z>>>>, End>;
 
-// fn get_neg<R, S>(c1: Chan<mpsc::Channel, (), Recv<Chan<mpsc::Channel, (AskNeg<R, S>, ()), Recv<i64, Var<Z>>>, Eps>>) where
-//     R: marker::Send + 'static, S: marker::Send + 'static
-// {
-//     let (c1, c2) = c1.recv();
-//     let (c2, n) = c2.recv();
-//     println!("{}", n);
-//     c2.zero().sel1().close();
-//     c1.close();
-// }
+fn get_neg<R, S>(c1: Chan<mpsc::Channel, (), DelegChanRecv<R, S>>)
+    where R: marker::Send + 'static, S: marker::Send + 'static
+{
+    let (c1, mpsc::Value(c2)) = c1.recv().unwrap();
+    let (c2, mpsc::Value(n)) = c2.recv().unwrap();
+    println!("get_neg: {}", n);
+    c2.zero().head().unwrap().close();
+    c1.close();
+}
 
 fn main() {
     mpsc::connect(server, add_client);
@@ -195,14 +198,14 @@ fn main() {
     mpsc::connect(server, sqrt_client);
     mpsc::connect(server, fn_client);
 
-    // let (c1, c1_) = mpsc::session_channel();
-    // let (c2, c2_) = mpsc::session_channel();
+    let (c1, c1_) = mpsc::session_channel();
+    let (c2, c2_) = mpsc::session_channel();
 
-    // let t1 = spawn(move || server(c1));
-    // let t2 = spawn(move || ask_neg(c1_, c2));
-    // let t3 = spawn(move || get_neg(c2_));
+    let t1 = spawn(move || server(c1));
+    let t2 = spawn(move || ask_neg(c1_, c2));
+    let t3 = spawn(move || get_neg(c2_));
 
-    // let _ = t1.join();
-    // let _ = t2.join();
-    // let _ = t3.join();
+    let _ = t1.join();
+    let _ = t2.join();
+    let _ = t3.join();
 }
