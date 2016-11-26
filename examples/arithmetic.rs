@@ -131,28 +131,30 @@ fn sqrt_client<R, S, T>(chan: Chan<mpsc::Channel, (), Rec<SqrtCli<R, S, T>>>) {
         .unwrap();
 }
 
-// // `fn_client` sends a function over the channel
+// `fn_client` sends a function over the channel
 
-// type PrimeCli<R, S, T> =
-//     Choose<Eps,
-//     Choose<R,
-//     Choose<S,
-//     Choose<T,
-//     Send<fn(i64) -> bool, Send<i64, Recv<bool, Var<Z>>>>>>>>;
+type PrimeCli<R, S, T> =
+    Choose<End, More<
+    Choose<R, More<
+    Choose<S, More<
+    Choose<T, More<
+    Choose<Send<mpsc::Value<fn(i64) -> bool>, Send<mpsc::Value<i64>, Recv<mpsc::Value<bool>, Var<Z>>>>, Nil>>>>>>>>>;
 
-// fn fn_client<R, S, T>(c: Chan<mpsc::Channel, (), Rec<PrimeCli<R, S, T>>>) {
-//     fn even(n: i64) -> bool {
-//         n % 2 == 0
-//     }
+fn fn_client<R, S, T>(chan: Chan<mpsc::Channel, (), Rec<PrimeCli<R, S, T>>>) {
+    fn even(n: i64) -> bool {
+        n % 2 == 0
+    }
 
-//     let (c, b) = c.enter()
-//         .skip4()
-//         .send(even)
-//         .send(42)
-//         .recv();
-//     println!("{}", b);
-//     c.zero().sel1().close();
-// }
+    let (chan, mpsc::Value(b)) = chan
+        .enter()
+        .skip4().unwrap()
+        .head().unwrap()
+        .send(mpsc::Value(even)).unwrap()
+        .send(mpsc::Value(42)).unwrap()
+        .recv().unwrap();
+    println!("fn_client: {}", b);
+    chan.zero().head().unwrap().close();
+}
 
 
 // // `ask_neg` and `get_neg` use delegation, that is, sending a channel over
@@ -191,7 +193,7 @@ fn main() {
     mpsc::connect(server, add_client);
     mpsc::connect(server, neg_client);
     mpsc::connect(server, sqrt_client);
-    // mpsc::connect(server, fn_client);
+    mpsc::connect(server, fn_client);
 
     // let (c1, c1_) = mpsc::session_channel();
     // let (c2, c2_) = mpsc::session_channel();
