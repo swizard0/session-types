@@ -14,6 +14,7 @@ pub struct Channel {
     rx: Receiver<Box<u8>>,
 }
 
+#[derive(Clone, Debug)]
 pub struct Value<T>(pub T) where T: Send + 'static;
 
 impl<T> ChannelSend for Value<T> where T: Send + 'static {
