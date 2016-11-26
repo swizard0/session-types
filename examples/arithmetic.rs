@@ -78,49 +78,58 @@ type AddCli<R> =
     Choose<End, More<
     Choose<Send<mpsc::Value<i64>, Send<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Var<Z>>>>, R>>>;
 
-fn add_client<R>(c: Chan<mpsc::Channel, (), Rec<AddCli<R>>>) {
-    let (c, mpsc::Value(n)) = c.enter()
+fn add_client<R>(chan: Chan<mpsc::Channel, (), Rec<AddCli<R>>>) {
+    let (chan, mpsc::Value(n)) = chan
+        .enter()
         .tail().unwrap()
         .head().unwrap()
         .send(mpsc::Value(42)).unwrap()
         .send(mpsc::Value(1)).unwrap()
         .recv().unwrap();
-    println!("{}", n);
-    c.zero().head().unwrap().close()
+    println!("add_client: {}", n);
+    chan.zero().head().unwrap().close()
 }
 
-// type NegCli<R, S> =
-//     Choose<Eps,
-//     Choose<R,
-//     Choose<Send<i64, Recv<i64, Var<Z>>>,
-//     S>>>;
+type NegCli<R, S> =
+    Choose<End, More<
+    Choose<R, More<
+    Choose<Send<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Var<Z>>>, S>>>>>;
 
-// fn neg_client<R, S>(c: Chan<mpsc::Channel, (), Rec<NegCli<R, S>>>) {
-//     let (c, n) = c.enter().skip2().sel1().send(42).recv();
-//     println!("{}", n);
-//     c.zero().sel1().close();
-// }
+fn neg_client<R, S>(chan: Chan<mpsc::Channel, (), Rec<NegCli<R, S>>>) {
+    let (chan, mpsc::Value(n)) = chan
+        .enter()
+        .skip2().unwrap()
+        .head().unwrap()
+        .send(mpsc::Value(42)).unwrap()
+        .recv().unwrap();
+    println!("neg_client: {}", n);
+    chan.zero().head().unwrap().close();
+}
 
-// type SqrtCli<R, S, T> =
-//     Choose<Eps,
-//     Choose<R,
-//     Choose<S,
-//     Choose<Send<f64, Offer<Recv<f64, Var<Z>>, Var<Z>>>,
-//     T>>>>;
+type SqrtCli<R, S, T> =
+    Choose<End, More<
+    Choose<R, More<
+    Choose<S, More<
+    Choose<Send<mpsc::Value<f64>, Offer<Recv<mpsc::Value<f64>, Var<Z>>, More<Offer<Var<Z>, Nil>>>>, T>>>>>>>;
 
-// fn sqrt_client<R, S, T>(c: Chan<mpsc::Channel, (), Rec<SqrtCli<R, S, T>>>) {
-//     match c.enter().skip3().sel1().send(42.0).offer() {
-//         Left(c) => {
-//             let (c, n) = c.recv();
-//             println!("{}", n);
-//             c.zero().sel1().close();
-//         }
-//         Right(c) => {
-//             println!("Couldn't take square root!");
-//             c.zero().sel1().close();
-//         }
-//     }
-// }
+fn sqrt_client<R, S, T>(chan: Chan<mpsc::Channel, (), Rec<SqrtCli<R, S, T>>>) {
+    let () = chan
+        .enter()
+        .skip3().unwrap()
+        .head().unwrap()
+        .send(mpsc::Value(42.0)).unwrap()
+        .offer()
+        .option(|chan_ok| {
+            let (chan, mpsc::Value(n)) = chan_ok.recv().unwrap();
+            println!("sqrt_client: {} OK", n);
+            chan.zero().head().unwrap().close();
+        })
+        .option(|chan_fail| {
+            println!("sqrt_client: couldn't take square root!");
+            chan_fail.zero().head().unwrap().close();
+        })
+        .unwrap();
+}
 
 // // `fn_client` sends a function over the channel
 
@@ -180,8 +189,8 @@ fn add_client<R>(c: Chan<mpsc::Channel, (), Rec<AddCli<R>>>) {
 
 fn main() {
     mpsc::connect(server, add_client);
-    // mpsc::connect(server, neg_client);
-    // mpsc::connect(server, sqrt_client);
+    mpsc::connect(server, neg_client);
+    mpsc::connect(server, sqrt_client);
     // mpsc::connect(server, fn_client);
 
     // let (c1, c1_) = mpsc::session_channel();
