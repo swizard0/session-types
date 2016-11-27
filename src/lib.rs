@@ -203,7 +203,7 @@ impl<SR, E, P, T> Chan<SR, E, Recv<T, P>> where SR: Carrier, T: ChannelRecv<Crr 
 impl<SR, E, P, L> Chan<SR, E, Choose<P, L>> where SR: Carrier {
     /// Perform an active choice, selecting protocol `P` (head of the choose list).
     #[must_use]
-    pub fn head(mut self) -> Result<Chan<SR, E, P>, SR::SendChoiceErr> {
+    pub fn car(mut self) -> Result<Chan<SR, E, P>, SR::SendChoiceErr> {
         match self.carrier.send_choice(true) {
             Ok(()) =>
                 Ok(cast_chan(self)),
@@ -213,12 +213,18 @@ impl<SR, E, P, L> Chan<SR, E, Choose<P, L>> where SR: Carrier {
             },
         }
     }
+
+    /// alias to `car` method
+    #[must_use]
+    pub fn first(self) -> Result<Chan<SR, E, P>, SR::SendChoiceErr> {
+        self.car()
+    }
 }
 
 impl<SR, E, P, Q, L> Chan<SR, E, Choose<P, More<Choose<Q, L>>>> where SR: Carrier {
-     /// Perform an active choice, skipping the first element of the choose list.
+     /// Perform an active choice, skipping first element and selecting tail of the choose list.
     #[must_use]
-    pub fn tail(mut self) -> Result<Chan<SR, E, Choose<Q, L>>, SR::SendChoiceErr> {
+    pub fn cdr(mut self) -> Result<Chan<SR, E, Choose<Q, L>>, SR::SendChoiceErr> {
         match self.carrier.send_choice(false) {
             Ok(()) =>
                 Ok(cast_chan(self)),
@@ -228,39 +234,55 @@ impl<SR, E, P, Q, L> Chan<SR, E, Choose<P, More<Choose<Q, L>>>> where SR: Carrie
             },
         }
     }
-}
 
-/// Convenience function. This is identical to `.tail()`
-impl<SR, Z, P, Q, L> Chan<SR, Z, Choose<P, More<Choose<Q, L>>>> where SR: Carrier {
+    /// Perform an active choice, selecting the second element of the choose list.
     #[must_use]
-    pub fn skip(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
-        self.tail()
+    pub fn second(self) -> Result<Chan<SR, E, Q>, SR::SendChoiceErr> {
+        self.cdr().and_then(|c| c.car())
     }
 }
 
-/// Convenience function. This is identical to `.tail().tail()`
 impl<SR, Z, PA, PB, Q, L> Chan<SR, Z, Choose<PA, More<Choose<PB, More<Choose<Q, L>>>>>> where SR: Carrier {
+    /// Convenience function. This is identical to `.cdr().cdr()`
     #[must_use]
-    pub fn skip2(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
-        self.tail().and_then(|c| c.tail())
+    pub fn cddr(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
+        self.cdr().and_then(|c| c.cdr())
+    }
+
+    /// Perform an active choice, selecting the third element of the choose list.
+    #[must_use]
+    pub fn third(self) -> Result<Chan<SR, Z, Q>, SR::SendChoiceErr> {
+        self.cddr().and_then(|c| c.car())
     }
 }
 
-/// Convenience function. This is identical to `.tail().tail().tail()`
 impl<SR, Z, PA, PB, PC, Q, L> Chan<SR, Z, Choose<PA, More<Choose<PB, More<Choose<PC, More<Choose<Q, L>>>>>>>> where SR: Carrier {
+    /// Convenience function. This is identical to `.cdr().cdr().cdr()`
     #[must_use]
-    pub fn skip3(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
-        self.skip2().and_then(|c| c.tail())
+    pub fn cdddr(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
+        self.cddr().and_then(|c| c.cdr())
+    }
+
+    /// Perform an active choice, selecting the fourth element of the choose list.
+    #[must_use]
+    pub fn fourth(self) -> Result<Chan<SR, Z, Q>, SR::SendChoiceErr> {
+        self.cdddr().and_then(|c| c.car())
     }
 }
 
-/// Convenience function. This is identical to `.tail().tail().tail().tail()`
 impl<SR, Z, PA, PB, PC, PD, Q, L>
     Chan<SR, Z, Choose<PA, More<Choose<PB, More<Choose<PC, More<Choose<PD, More<Choose<Q, L>>>>>>>>>> where SR: Carrier
 {
+    /// Convenience function. This is identical to `.cdr().cdr().cdr().cdr()`
     #[must_use]
-    pub fn skip4(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
-        self.skip3().and_then(|c| c.tail())
+    pub fn cddddr(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
+        self.cdddr().and_then(|c| c.cdr())
+    }
+
+    /// Perform an active choice, selecting the fifth element of the choose list.
+    #[must_use]
+    pub fn fifth(self) -> Result<Chan<SR, Z, Q>, SR::SendChoiceErr> {
+        self.cddddr().and_then(|c| c.car())
     }
 }
 
