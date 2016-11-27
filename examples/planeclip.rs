@@ -4,15 +4,13 @@
 
 // The implementation borrows heavily from Pucella-Tov (2008). See that paper
 // for more explanation.
-
 extern crate session_types_ng;
 extern crate rand;
 
-use session_types_ng::*;
-
+use std::thread::spawn;
 use rand::{Rand, Rng};
 
-use std::thread::spawn;
+use session_types_ng::*;
 
 #[derive(Debug, Copy, Clone)]
 struct Point(f64, f64, f64);
@@ -53,113 +51,125 @@ fn intersect(p1: Point, p2: Point, plane: Plane) -> Option<Point> {
     }
 }
 
-type SendList<A> = Rec<Choose<Eps, Send<A, Var<Z>>>>;
-type RecvList<A> = Rec<Offer<Eps, Recv<A, Var<Z>>>>;
+type SendList<A> = Rec<Choose<End, More<Choose<Send<mpsc::Value<A>, Var<Z>>, Nil>>>>;
+type RecvList<A> = Rec<Offer<End, More<Offer<Recv<mpsc::Value<A>, Var<Z>>, Nil>>>>;
 
-fn sendlist<A: std::marker::Send+Copy+'static>
-    (c: Chan<(), SendList<A>>, xs: Vec<A>)
+fn send_list<A>(chan: Chan<mpsc::Channel, (), SendList<A>>, xs: Vec<A>) where A: std::marker::Send + Copy + 'static
 {
-    let mut c = c.enter();
-    for x in xs.iter() {
-        let c1 = c.sel2().send(*x);
-        c = c1.zero();
+    let mut chan = chan.enter();
+    for x in xs {
+        chan = chan.tail().unwrap().head().unwrap().send(mpsc::Value(x)).unwrap().zero();
     }
-    c.sel1().close();
+    chan.head().unwrap().close();
 }
 
-fn recvlist<A: std::marker::Send+'static>
-    (c: Chan<(), RecvList<A>>) -> Vec<A>
+fn recv_list<A>(chan: Chan<mpsc::Channel, (), RecvList<A>>) -> Vec<A> where A: std::marker::Send + 'static
 {
-    let mut v = Vec::new();
-    let mut c = c.enter();
+    let mut vec = Vec::new();
+    let mut chan = chan.enter();
     loop {
-        c = match c.offer() {
-            Left(c) => {
-                c.close();
-                break;
-            }
-            Right(c) => {
-                let (c, x) = c.recv();
-                v.push(x);
-                c.zero()
-            }
+        let maybe_chan = chan
+            .offer()
+            .option(|chan_stop| {
+                chan_stop.close();
+                None
+            })
+            .option(|chan_value| {
+                let (chan, mpsc::Value(x)) = chan_value.recv().unwrap();
+                vec.push(x);
+                Some(chan.zero())
+            })
+            .unwrap();
+
+        if let Some(next_chan) = maybe_chan {
+            chan = next_chan;
+        } else {
+            return vec;
         }
     }
-
-    v
 }
 
 fn clipper(plane: Plane,
-           ic: Chan<(), RecvList<Point>>,
-           oc: Chan<(), SendList<Point>>)
+           ic: Chan<mpsc::Channel, (), RecvList<Point>>,
+           oc: Chan<mpsc::Channel, (), SendList<Point>>)
 {
     let mut oc = oc.enter();
     let mut ic = ic.enter();
     let (pt0, mut pt);
 
-    match ic.offer() {
-        Left(c) => {
-            c.close();
-            oc.sel1().close();
-            return
-        }
-        Right(c) => {
-            let (c, ptz) = c.recv();
-            ic = c.zero();
-            pt0 = ptz;
-            pt = ptz;
-        }
+    let maybe_values = ic
+        .offer()
+        .option(|chan_stop| {
+            chan_stop.close();
+            None
+        })
+        .option(|chan_value| {
+            let (chan, mpsc::Value(ptz)) = chan_value.recv().unwrap();
+            Some((ptz, chan.zero()))
+        })
+        .unwrap();
+
+    if let Some((next_pt, next_ic)) = maybe_values {
+        ic = next_ic;
+        pt0 = next_pt;
+        pt = next_pt;
+    } else {
+        oc.head().unwrap().close();
+        return;
     }
 
     loop {
         if above(pt, plane) {
-            oc = oc.sel2().send(pt).zero();
+            oc = oc.tail().unwrap().head().unwrap().send(mpsc::Value(pt)).unwrap().zero();
         }
-        ic = match ic.offer() {
-            Left(c) => {
-                if let Some(pt) = intersect(pt, pt0, plane) {
-                    oc = oc.sel2().send(pt).zero();
-                }
-                c.close();
-                oc.sel1().close();
-                break;
+
+        let maybe_values = ic
+            .offer()
+            .option(|chan_stop| {
+                chan_stop.close();
+                None
+            })
+            .option(|chan_value| {
+                let (ic, mpsc::Value(pt2)) = chan_value.recv().unwrap();
+                Some((pt2, ic.zero()))
+            })
+            .unwrap();
+
+        if let Some((pt2, next_ic)) = maybe_values {
+            if let Some(pt) = intersect(pt, pt2, plane) {
+                oc = oc.tail().unwrap().head().unwrap().send(mpsc::Value(pt)).unwrap().zero();
             }
-            Right(ic) => {
-                let (ic, pt2) = ic.recv();
-                if let Some(pt) = intersect(pt, pt2, plane) {
-                    oc = oc.sel2().send(pt).zero();
-                }
-                pt = pt2;
-                ic.zero()
+            pt = pt2;
+            ic = next_ic;
+        } else {
+            if let Some(pt) = intersect(pt, pt0, plane) {
+                oc = oc.tail().unwrap().head().unwrap().send(mpsc::Value(pt)).unwrap().zero();
             }
+            oc.head().unwrap().close();
+            break;
         }
     }
 }
 
 fn clipmany(planes: Vec<Plane>, points: Vec<Point>) -> Vec<Point> {
-    let (tx, rx) = session_channel();
-    spawn(move || sendlist(tx, points));
+    let (tx, rx) = mpsc::session_channel();
+    spawn(move || send_list(tx, points));
     let mut rx = rx;
 
-    for plane in planes.into_iter() {
-        let (tx2, rx2) = session_channel();
+    for plane in planes {
+        let (tx2, rx2) = mpsc::session_channel();
         spawn(move || clipper(plane, rx, tx2));
         rx = rx2;
     }
-    recvlist(rx)
+    recv_list(rx)
 }
 
 fn normalize_point(Point(a,b,c): Point) -> Point {
-    Point(10.0 * (a - 0.5),
-          10.0 * (b - 0.5),
-          10.0 * (c - 0.5))
+    Point(10.0 * (a - 0.5), 10.0 * (b - 0.5), 10.0 * (c - 0.5))
 }
 
 fn normalize_plane(Plane(a,b,c,d): Plane) -> Plane {
-    Plane(10.0 * (a - 0.5),
-          10.0 * (b - 0.5),
-          10.0 * (c - 0.5),
-          10.0 * (d - 0.5))
+    Plane(10.0 * (a - 0.5), 10.0 * (b - 0.5), 10.0 * (c - 0.5), 10.0 * (d - 0.5))
 }
 
 fn bench(n: usize, m: usize) {
@@ -174,7 +184,7 @@ fn bench(n: usize, m: usize) {
         .collect();
 
     let points = clipmany(planes, points);
-    println!("{}", points.len());
+    println!("bench: {} of {} points and {} planes", points.len(), n, m);
 }
 
 fn main() {
