@@ -49,60 +49,48 @@ fn atm(chan: Chan<mpsc::Channel, (), Atm>) -> Result<(), AtmError> {
     let mut chan = {
         let (chan, Value(id)) = chan.recv().map_err(AtmError::RecvId)?;
         if !approved(&id) {
-            chan
-                .tail().map_err(AtmError::FailChooseId)?
-                .head().map_err(AtmError::FailChooseId)?
-                .close();
+            chan.second().map_err(AtmError::FailChooseId)?.close();
             return Ok(());
         }
-        chan.head().map_err(AtmError::SuccessChooseId)?.enter()
+        chan.first().map_err(AtmError::SuccessChooseId)?.enter()
     };
 
     let mut balance = 0;
     loop {
-        enum Action {
-            Stop,
-            Next(Chan<mpsc::Channel, (AtmInner, ()), AtmInner>),
-        }
-
-        let action = chan
+        let maybe_chan = chan
             .offer()
             .option(|chan_deposit| {
                 let (chan, Value(amt)) = chan_deposit.recv().map_err(AtmError::RecvDeposit)?;
                 balance += amt;
                 let chan = chan.send(Value(balance)).map_err(AtmError::SendDepositBalance)?.zero();
-                Ok(Action::Next(chan))
+                Ok(Some(chan))
             })
             .option(|chan_withdraw| {
                 let (chan, Value(amt)) = chan_withdraw.recv().map_err(AtmError::RecvWithdraw)?;
                 let chan =
                     if amt > balance {
-                        chan
-                            .tail().map_err(AtmError::FailChooseWithdraw)?
-                            .head().map_err(AtmError::FailChooseWithdraw)?
-                            .zero()
+                        chan.second().map_err(AtmError::FailChooseWithdraw)?.zero()
                     } else {
                         balance -= amt;
-                        chan.head().map_err(AtmError::SuccessChooseWithdraw)?.zero()
+                        chan.first().map_err(AtmError::SuccessChooseWithdraw)?.zero()
                     };
-                Ok(Action::Next(chan))
+                Ok(Some(chan))
             })
             .option(|chan_balance| {
                 let chan = chan_balance.send(Value(balance)).map_err(AtmError::SendBalance)?.zero();
-                Ok(Action::Next(chan))
+                Ok(Some(chan))
             })
             .option(|chan_quit| {
                 chan_quit.close();
-                Ok(Action::Stop)
+                Ok(None)
             })
             .map_err(AtmError::OfferAtm)??;
 
-        match action {
-            Action::Stop =>
-                return Ok(()),
-            Action::Next(next_chan) =>
-                chan = next_chan,
-        };
+        if let Some(next_chan) = maybe_chan {
+            chan = next_chan;
+        } else {
+            return Ok(());
+        }
     }
 }
 
@@ -137,29 +125,26 @@ fn login_client(chan: Chan<mpsc::Channel, (), Client>, login: &str) ->
 fn deposit_client(chan: Chan<mpsc::Channel, (), Client>) -> Result<(), ClientError> {
     let chan = login_client(chan, "Deposit Client")?;
     let (chan, Value(new_balance)) = chan
-        .head().map_err(ClientError::FailChooseDeposit)?
+        .first().map_err(ClientError::FailChooseDeposit)?
         .send(Value(200)).map_err(ClientError::SendDeposit)?
         .recv().map_err(ClientError::RecvBalance)?;
     println!("deposit_client: new balance: {}", new_balance);
     chan.zero()
-        .skip3().map_err(ClientError::FailChooseQuit)?
-        .head().map_err(ClientError::FailChooseQuit)?
+        .fourth().map_err(ClientError::FailChooseQuit)?
         .close();
     Ok(())
 }
 
 fn withdraw_client(chan: Chan<mpsc::Channel, (), Client>) -> Result<(), ClientError> {
     login_client(chan, "Withdraw Client")?
-        .tail().map_err(ClientError::FailChooseWithdraw)?
-        .head().map_err(ClientError::FailChooseWithdraw)?
+        .second().map_err(ClientError::FailChooseWithdraw)?
         .send(Value(100)).map_err(ClientError::SendWithdraw)?
         .offer()
         .option(|chan_success| {
             println!("withdraw_client: successfully withdrew 100");
             chan_success
                 .zero()
-                .skip3().map_err(ClientError::FailChooseQuit)?
-                .head().map_err(ClientError::FailChooseQuit)?
+                .fourth().map_err(ClientError::FailChooseQuit)?
                 .close();
             Ok(())
         })
@@ -167,13 +152,12 @@ fn withdraw_client(chan: Chan<mpsc::Channel, (), Client>) -> Result<(), ClientEr
             println!("withdraw_client: could not withdraw. Depositing instead.");
             chan_fail
                 .zero()
-                .head().map_err(ClientError::FailChooseDeposit)?
+                .first().map_err(ClientError::FailChooseDeposit)?
                 .send(Value(50)).map_err(ClientError::SendDeposit)?
                 .recv().map_err(ClientError::RecvBalance)?
                 .0
                 .zero()
-                .skip3().map_err(ClientError::FailChooseQuit)?
-                .head().map_err(ClientError::FailChooseQuit)?
+                .fourth().map_err(ClientError::FailChooseQuit)?
                 .close();
             Ok(())
         })
