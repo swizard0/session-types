@@ -14,12 +14,11 @@ fn server_handler(chan: Chan<mpsc::Channel, (), Server>) {
     let (chan, mpsc::Value(n)) = chan.recv().unwrap();
     match n.checked_add(42) {
         Some(n) => chan
-            .head().unwrap()
+            .first().unwrap()
             .send(mpsc::Value(n)).unwrap()
             .close(),
         None => chan
-            .tail().unwrap()
-            .head().unwrap()
+            .second().unwrap()
             .close(),
     }
 }

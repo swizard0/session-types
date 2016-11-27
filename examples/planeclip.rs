@@ -58,9 +58,9 @@ fn send_list<A>(chan: Chan<mpsc::Channel, (), SendList<A>>, xs: Vec<A>) where A:
 {
     let mut chan = chan.enter();
     for x in xs {
-        chan = chan.tail().unwrap().head().unwrap().send(mpsc::Value(x)).unwrap().zero();
+        chan = chan.second().unwrap().send(mpsc::Value(x)).unwrap().zero();
     }
-    chan.head().unwrap().close();
+    chan.first().unwrap().close();
 }
 
 fn recv_list<A>(chan: Chan<mpsc::Channel, (), RecvList<A>>) -> Vec<A> where A: std::marker::Send + 'static
@@ -114,13 +114,13 @@ fn clipper(plane: Plane,
         pt0 = next_pt;
         pt = next_pt;
     } else {
-        oc.head().unwrap().close();
+        oc.first().unwrap().close();
         return;
     }
 
     loop {
         if above(pt, plane) {
-            oc = oc.tail().unwrap().head().unwrap().send(mpsc::Value(pt)).unwrap().zero();
+            oc = oc.second().unwrap().send(mpsc::Value(pt)).unwrap().zero();
         }
 
         let maybe_values = ic
@@ -137,15 +137,15 @@ fn clipper(plane: Plane,
 
         if let Some((pt2, next_ic)) = maybe_values {
             if let Some(pt) = intersect(pt, pt2, plane) {
-                oc = oc.tail().unwrap().head().unwrap().send(mpsc::Value(pt)).unwrap().zero();
+                oc = oc.second().unwrap().send(mpsc::Value(pt)).unwrap().zero();
             }
             pt = pt2;
             ic = next_ic;
         } else {
             if let Some(pt) = intersect(pt, pt0, plane) {
-                oc = oc.tail().unwrap().head().unwrap().send(mpsc::Value(pt)).unwrap().zero();
+                oc = oc.second().unwrap().send(mpsc::Value(pt)).unwrap().zero();
             }
-            oc.head().unwrap().close();
+            oc.first().unwrap().close();
             break;
         }
     }

@@ -46,19 +46,17 @@ fn cli(chan: Chan<mpsc::Channel, (), Rec<Cli>>) {
         match &buf[..] {
             "q" => {
                 chan
-                    .tail().unwrap()
-                    .head().unwrap()
+                    .second().unwrap()
                     .send(mpsc::Value(format!("{} lines sent", count))).unwrap()
                     .zero()
-                    .head().unwrap()
+                    .first().unwrap()
                     .close();
                 println!("Client quitting");
                 break;
             }
             _ => {
                 chan = chan
-                    .tail().unwrap()
-                    .head().unwrap()
+                    .second().unwrap()
                     .send(mpsc::Value(buf.clone())).unwrap()
                     .zero();
                 buf.clear();
