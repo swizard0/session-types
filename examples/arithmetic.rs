@@ -24,29 +24,24 @@ type Srv =
 fn server(chan: Chan<mpsc::Channel, (), Rec<Srv>>) {
     let mut chan = chan.enter();
     loop {
-        enum Action {
-            Stop,
-            Next(Chan<mpsc::Channel, (Srv, ()), Srv>),
-        }
-
-        let action = chan
+        let maybe_chan = chan
             .offer()
             .option(|chan_close| {
                 chan_close.close();
-                Action::Stop
+                None
             })
             .option(|chan_add| {
                 let (chan_add, mpsc::Value(n)) = chan_add.recv().unwrap();
                 let (chan_add, mpsc::Value(m)) = chan_add.recv().unwrap();
-                Action::Next(chan_add.send(mpsc::Value(n + m)).unwrap().zero())
+                Some(chan_add.send(mpsc::Value(n + m)).unwrap().zero())
             })
             .option(|chan_neg| {
                 let (chan_neg, mpsc::Value(n)) = chan_neg.recv().unwrap();
-                Action::Next(chan_neg.send(mpsc::Value(-n)).unwrap().zero())
+                Some(chan_neg.send(mpsc::Value(-n)).unwrap().zero())
             })
             .option(|chan_sqrt| {
                 let (chan_sqrt, mpsc::Value(x)) = chan_sqrt.recv().unwrap();
-                Action::Next(if x >= 0.0 {
+                Some(if x >= 0.0 {
                     chan_sqrt.first().unwrap().send(mpsc::Value(x.sqrt())).unwrap().zero()
                 } else {
                     chan_sqrt.second().unwrap().zero()
@@ -55,16 +50,15 @@ fn server(chan: Chan<mpsc::Channel, (), Rec<Srv>>) {
             .option(|chan_eval| {
                 let (chan_eval, mpsc::Value(f)) = chan_eval.recv().unwrap();
                 let (chan_eval, mpsc::Value(n)) = chan_eval.recv().unwrap();
-                Action::Next(chan_eval.send(mpsc::Value(f(n))).unwrap().zero())
+                Some(chan_eval.send(mpsc::Value(f(n))).unwrap().zero())
             })
             .unwrap();
 
-        match action {
-            Action::Stop =>
-                return,
-            Action::Next(next_chan) =>
-                chan = next_chan,
-        };
+        if let Some(next_chan) = maybe_chan {
+            chan = next_chan;
+        } else {
+            return;
+        }
     }
 }
 
