@@ -7,7 +7,6 @@ use std::marker;
 use std::thread::spawn;
 use session_types_ng::*;
 
-
 // Offers: Add, Negate, Sqrt, Eval
 type SrvQuit = End;
 type SrvAdd  = Recv<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Send<mpsc::Value<i64>, Var<Z>>>>;
@@ -48,9 +47,9 @@ fn server(chan: Chan<mpsc::Channel, (), Rec<Srv>>) {
             .option(|chan_sqrt| {
                 let (chan_sqrt, mpsc::Value(x)) = chan_sqrt.recv().unwrap();
                 Action::Next(if x >= 0.0 {
-                    chan_sqrt.head().unwrap().send(mpsc::Value(x.sqrt())).unwrap().zero()
+                    chan_sqrt.first().unwrap().send(mpsc::Value(x.sqrt())).unwrap().zero()
                 } else {
-                    chan_sqrt.tail().unwrap().head().unwrap().zero()
+                    chan_sqrt.second().unwrap().zero()
                 })
             })
             .option(|chan_eval| {
@@ -80,13 +79,12 @@ type AddCli<R> =
 fn add_client<R>(chan: Chan<mpsc::Channel, (), Rec<AddCli<R>>>) {
     let (chan, mpsc::Value(n)) = chan
         .enter()
-        .tail().unwrap()
-        .head().unwrap()
+        .second().unwrap()
         .send(mpsc::Value(42)).unwrap()
         .send(mpsc::Value(1)).unwrap()
         .recv().unwrap();
     println!("add_client: {}", n);
-    chan.zero().head().unwrap().close()
+    chan.zero().first().unwrap().close()
 }
 
 type NegCli<R, S> =
@@ -97,12 +95,11 @@ type NegCli<R, S> =
 fn neg_client<R, S>(chan: Chan<mpsc::Channel, (), Rec<NegCli<R, S>>>) {
     let (chan, mpsc::Value(n)) = chan
         .enter()
-        .skip2().unwrap()
-        .head().unwrap()
+        .third().unwrap()
         .send(mpsc::Value(42)).unwrap()
         .recv().unwrap();
     println!("neg_client: {}", n);
-    chan.zero().head().unwrap().close();
+    chan.zero().first().unwrap().close();
 }
 
 type SqrtCli<R, S, T> =
@@ -114,18 +111,17 @@ type SqrtCli<R, S, T> =
 fn sqrt_client<R, S, T>(chan: Chan<mpsc::Channel, (), Rec<SqrtCli<R, S, T>>>) {
     let () = chan
         .enter()
-        .skip3().unwrap()
-        .head().unwrap()
+        .fourth().unwrap()
         .send(mpsc::Value(42.0)).unwrap()
         .offer()
         .option(|chan_ok| {
             let (chan, mpsc::Value(n)) = chan_ok.recv().unwrap();
             println!("sqrt_client: {} OK", n);
-            chan.zero().head().unwrap().close();
+            chan.zero().first().unwrap().close();
         })
         .option(|chan_fail| {
             println!("sqrt_client: couldn't take square root!");
-            chan_fail.zero().head().unwrap().close();
+            chan_fail.zero().first().unwrap().close();
         })
         .unwrap();
 }
@@ -146,13 +142,12 @@ fn fn_client<R, S, T>(chan: Chan<mpsc::Channel, (), Rec<PrimeCli<R, S, T>>>) {
 
     let (chan, mpsc::Value(b)) = chan
         .enter()
-        .skip4().unwrap()
-        .head().unwrap()
+        .fifth().unwrap()
         .send(mpsc::Value(even)).unwrap()
         .send(mpsc::Value(42)).unwrap()
         .recv().unwrap();
     println!("fn_client: {}", b);
-    chan.zero().head().unwrap().close();
+    chan.zero().first().unwrap().close();
 }
 
 // `ask_neg` and `get_neg` use delegation, that is, sending a channel over
@@ -174,7 +169,7 @@ fn ask_neg<R, S>(c1: Chan<mpsc::Channel, (), Rec<AskNeg<R, S>>>,
                  c2: Chan<mpsc::Channel, (), DelegChanSend<R, S>>)
     where R: marker::Send + 'static, S: marker::Send + 'static
 {
-    let c1 = c1.enter().skip2().unwrap().head().unwrap().send(mpsc::Value(42)).unwrap();
+    let c1 = c1.enter().third().unwrap().send(mpsc::Value(42)).unwrap();
     c2.send(mpsc::Value(c1)).unwrap().close();
 }
 
@@ -187,7 +182,7 @@ fn get_neg<R, S>(c1: Chan<mpsc::Channel, (), DelegChanRecv<R, S>>)
     let (c1, mpsc::Value(c2)) = c1.recv().unwrap();
     let (c2, mpsc::Value(n)) = c2.recv().unwrap();
     println!("get_neg: {}", n);
-    c2.zero().head().unwrap().close();
+    c2.zero().first().unwrap().close();
     c1.close();
 }
 
