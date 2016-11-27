@@ -1,23 +1,30 @@
 extern crate session_types_ng;
 extern crate rand;
 
-use session_types_ng::*;
 use std::sync::mpsc::{channel, Receiver};
 use std::thread::spawn;
 use rand::random;
 
-type Server = Recv<u8, Choose<Send<u8, Eps>, Eps>>;
+use session_types_ng::*;
+
+type Server = Recv<mpsc::Value<u8>, Choose<Send<mpsc::Value<u8>, End>, More<Choose<End, Nil>>>>;
 type Client = <Server as HasDual>::Dual;
 
-fn server_handler(c: Chan<(), Server>) {
-    let (c, n) = c.recv();
+fn server_handler(chan: Chan<mpsc::Channel, (), Server>) {
+    let (chan, mpsc::Value(n)) = chan.recv().unwrap();
     match n.checked_add(42) {
-        Some(n) => c.sel1().send(n).close(),
-        None => c.sel2().close(),
+        Some(n) => chan
+            .head().unwrap()
+            .send(mpsc::Value(n)).unwrap()
+            .close(),
+        None => chan
+            .tail().unwrap()
+            .head().unwrap()
+            .close(),
     }
 }
 
-fn server(rx: Receiver<Chan<(), Server>>) {
+fn server(rx: Receiver<Chan<mpsc::Channel, (), Server>>) {
     let mut count = 0;
     loop {
         match rx.recv() {
@@ -25,25 +32,28 @@ fn server(rx: Receiver<Chan<(), Server>>) {
                 spawn(move || server_handler(c));
                 count += 1;
             },
-            Err(_) => break,
+            Err(_) =>
+                break,
         }
     }
     println!("Handled {} connections", count);
 }
 
-fn client_handler(c: Chan<(), Client>) {
+fn client_handler(chan: Chan<mpsc::Channel, (), Client>) {
     let n = random();
-    match c.send(n).offer() {
-        Left(c) => {
-            let (c, n2) = c.recv();
-            c.close();
+    chan
+        .send(mpsc::Value(n)).unwrap()
+        .offer()
+        .option(|chan_success| {
+            let (chan, mpsc::Value(n2)) = chan_success.recv().unwrap();
+            chan.close();
             println!("{} + 42 = {}", n, n2);
-        },
-        Right(c) => {
-            c.close();
+        })
+        .option(|chan_fail| {
+            chan_fail.close();
             println!("{} + 42 is an overflow :(", n);
-        }
-    }
+        })
+        .unwrap();
 }
 
 fn main() {
@@ -54,7 +64,7 @@ fn main() {
     for _ in 0..n {
         let tmp = tx.clone();
         spawn(move || {
-            let (c1, c2) = session_channel();
+            let (c1, c2) = mpsc::session_channel();
             tmp.send(c1).unwrap();
             client_handler(c2);
         });
