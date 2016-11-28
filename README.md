@@ -1,7 +1,5 @@
-session-types
+session-types-ng
 -------------
-
-[![Build Status](https://travis-ci.org/Munksgaard/session-types.svg?branch=master)](https://travis-ci.org/Munksgaard/session-types)
 
 This is an implementation of session types in Rust.
 
