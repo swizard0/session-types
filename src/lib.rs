@@ -144,10 +144,6 @@ impl<SR, E, P> Chan<SR, E, P> {
             session: Session(PhantomData),
         }
     }
-
-    pub fn into_inner(self) -> SR {
-        self.carrier
-    }
 }
 
 impl<SR, E> Chan<SR, E, End> {
@@ -156,6 +152,12 @@ impl<SR, E> Chan<SR, E, End> {
         // This method cleans up the channel without running the panicky destructor for `Session`
         // In essence, it calls the drop glue bypassing the `Drop::drop` method
         close_chan(self);
+    }
+
+    /// Same as `close`, but keep underlying carrier alive.
+    pub fn shutdown(self) -> SR {
+        std::mem::forget(self.session);
+        self.carrier
     }
 }
 
