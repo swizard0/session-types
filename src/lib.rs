@@ -144,6 +144,10 @@ impl<SR, E, P> Chan<SR, E, P> {
             session: Session(PhantomData),
         }
     }
+
+    pub fn into_inner(self) -> SR {
+        self.carrier
+    }
 }
 
 impl<SR, E> Chan<SR, E, End> {
