@@ -1,6 +1,6 @@
 [package]
 name = "session-types-ng"
-version = "0.3.6"
+version = "0.3.7"
 authors = [ "Alexey Voznyuk <me@swizard.info>"
           , "Philip Munksgaard <pmunksgaard@gmail.com>"
           , "Thomas Bracht Laumann Jespersen <laumann.thomas@gmail.com>"
@@ -18,7 +18,3 @@ rand = "*"
 
 [features]
 default = []
-chan_select = ["compiletest_rs"]
-
-[dependencies]
-compiletest_rs = { version = "*", optional = true }
