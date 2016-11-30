@@ -74,7 +74,7 @@ impl<SR, E, P, T> Chan<SR, E, Recv<T, P>> where ... {
 These both session types have two parameters: `T`, which is the type of value we want to send or receive, and `P` which is the next protocol for our channel to continue with. Note that corresponding methods consume `self` of type `Send<T, P>`, and return the same object with modified session protocol `P`. For example, channels with session of type `Send<T, End>` would have method `send` returning an object with session set to `End`, thus losing method `send` but obtaining method `close` instead. Consider the following code snippet:
 
 ```rust
-fn send_42(channel: Chan<mpsc::Channel, (), Send<mpsc::Value<usize>, End>) {
+fn send_42(channel: Chan<mpsc::Channel, (), Send<mpsc::Value<usize>, End>>) {
     channel
         .send(mpsc::Value(42))
         .unwrap()
@@ -87,4 +87,40 @@ The function `send_42` accepts a channel argument whose type defines the followi
 * It uses `std::sync::mpsc` as underlying carrier for transmission.
 * The session protocol requires that we have to send a value `mpsc::Value<usize>` and then we are forced to terminate the session.
 
-The only way to write an implementation is something like we have in the snippet above. Given this variable `channel`, the only thing we can do with it is to invoke `send` method, because this is the only method that is implemented for such type `Chan<..., Send<..>>`. Even more, after using `send` we will completely lose the object, because it will be moved into the method, and Rust will forbid to use it anymore. But instead we'll get another channel of session type `End`, and the only thing we can do with it is to `close`!
+The only way to write an implementation is something like we have in the snippet above. Given this variable `channel`, the only thing we can do with it is to invoke `send` method, because there is no other methodsfor such type `Chan<..., Send<..>>`. Even more, after using `send` we will completely lose the object, because it will be moved into the method, and Rust will forbid to use it anymore. But instead we'll get another channel of session type `End`, and the only thing we can do with it is to `close`!
+
+Let's consider how a corresponding function `recv_42` should look like:
+
+```rust
+fn recv_42(channel: Chan<mpsc::Channel, (), Recv<mpsc::Value<usize>, End>>) -> usize {
+    let (channel, mpsc::Value(result)) = channel.recv().unwrap();
+    channel.close();
+    result
+}
+```
+
+The function signature is almost the same except the session protocol contains `Recv` type instead of `Send`. That makes sense: whenever a value is sent on the one endpoint of channel, it should be received on the other. Actually every possible session type in the library has it's dual type, like `Send` <-> `Recv`. We could use `HasDual` trait for this purpose, which is defined in the following way:
+
+```rust
+pub unsafe trait HasDual {
+    type Dual;
+}
+```
+
+And it is implemented for all session types, for example:
+
+```rust
+unsafe impl<T, P: HasDual> HasDual for Send<T, P> {
+    type Dual = Recv<T, P::Dual>;
+}
+```
+
+So we could take advantage of `HasDual::Dual` assosiated type and declare type alias for our `send_42` and `recv_42` functions:
+
+```rust
+type Send42Proto = Send<mpsc::Value<usize>, End>;
+type Recv42Proto = <Send42Proto as HasDual>::Dual;
+
+fn send_42(channel: Chan<mpsc::Channel, (), Send42Proto>) { ... }
+fn recv_42(channel: Chan<mpsc::Channel, (), Recv42Proto>) -> usize { ... }
+```
