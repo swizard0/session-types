@@ -87,7 +87,7 @@ The function `send_42` accepts a channel argument whose type defines the followi
 * It uses `std::sync::mpsc` as underlying carrier for transmission.
 * The session protocol requires that we have to send a value `mpsc::Value<usize>` and then we are forced to terminate the session.
 
-The only way to write an implementation is something like we have in the snippet above. Given this variable `channel`, the only thing we can do with it is to invoke `send` method, because there is no other methodsfor such type `Chan<..., Send<..>>`. Even more, after using `send` we will completely lose the object, because it will be moved into the method, and Rust will forbid to use it anymore. But instead we'll get another channel of session type `End`, and the only thing we can do with it is to `close`!
+The only way to write an implementation is something like we have in the snippet above. Given this variable `channel`, the only thing we can do with it is to invoke `send` method, because there is no other methods for such type `Chan<..., Send<..>>`. Even more, after using `send` we will completely lose the object, because it will be moved into the method, and Rust will forbid to use it anymore. But instead we'll get another channel of session type `End`, and the only thing we can do with it is to `close`!
 
 Let's consider how a corresponding function `recv_42` should look like:
 
