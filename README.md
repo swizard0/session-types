@@ -99,7 +99,7 @@ fn recv_42(channel: Chan<mpsc::Channel, (), Recv<mpsc::Value<usize>, End>>) -> u
 }
 ```
 
-The function signature is almost the same except the session protocol contains `Recv` type instead of `Send`. That makes sense: whenever a value is sent on the one endpoint of channel, it should be received on the other. Actually every possible session type in the library has it's dual type, like `Send` <-> `Recv`. We could use `HasDual` trait for this purpose, which is defined in the following way:
+The function signature is almost the same except the session protocol contains `Recv` type instead of `Send`. That makes sense: whenever a value is sent on the one endpoint of channel, it should be received on the other. Actually every possible session type in the library has its dual type, like `Send` <-> `Recv`. We could use `HasDual` trait for this purpose, which is defined in the following way:
 
 ```rust
 pub unsafe trait HasDual {
