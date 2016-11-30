@@ -7,15 +7,15 @@ use rand::random;
 
 use session_types_ng::*;
 
-type Server = Recv<mpsc::Value<u8>, Choose<Send<mpsc::Value<u8>, End>, Choose<End, Nil>>>;
+type Server = Recv<u8, Choose<Send<u8, End>, Choose<End, Nil>>>;
 type Client = <Server as HasDual>::Dual;
 
 fn server_handler(chan: Chan<mpsc::Channel, (), Server>) {
-    let (chan, mpsc::Value(n)) = chan.recv().unwrap();
+    let (chan, n) = chan.recv().unwrap();
     match n.checked_add(42) {
         Some(n) => chan
             .first().unwrap()
-            .send(mpsc::Value(n)).unwrap()
+            .send(n).unwrap()
             .close(),
         None => chan
             .second().unwrap()
@@ -41,10 +41,10 @@ fn server(rx: Receiver<Chan<mpsc::Channel, (), Server>>) {
 fn client_handler(chan: Chan<mpsc::Channel, (), Client>) {
     let n = random();
     chan
-        .send(mpsc::Value(n)).unwrap()
+        .send(n).unwrap()
         .offer()
         .option(|chan_success| {
-            let (chan, mpsc::Value(n2)) = chan_success.recv().unwrap();
+            let (chan, n2) = chan_success.recv().unwrap();
             chan.close();
             println!("{} + 42 = {}", n, n2);
         })
@@ -64,7 +64,7 @@ fn main() {
         let tmp = tx.clone();
         spawn(move || {
             let (c1, c2) = mpsc::session_channel();
-            tmp.send(c1).unwrap();
+            std::sync::mpsc::Sender::<_>::send(&tmp, c1).unwrap();
             client_handler(c2);
         });
     }

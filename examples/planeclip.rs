@@ -51,14 +51,14 @@ fn intersect(p1: Point, p2: Point, plane: Plane) -> Option<Point> {
     }
 }
 
-type SendList<A> = Rec<Choose<End, Choose<Send<mpsc::Value<A>, Var<Z>>, Nil>>>;
-type RecvList<A> = Rec<Offer<End, Offer<Recv<mpsc::Value<A>, Var<Z>>, Nil>>>;
+type SendList<A> = Rec<Choose<End, Choose<Send<A, Var<Z>>, Nil>>>;
+type RecvList<A> = Rec<Offer<End, Offer<Recv<A, Var<Z>>, Nil>>>;
 
 fn send_list<A>(chan: Chan<mpsc::Channel, (), SendList<A>>, xs: Vec<A>) where A: std::marker::Send + Copy + 'static
 {
     let mut chan = chan.enter();
     for x in xs {
-        chan = chan.second().unwrap().send(mpsc::Value(x)).unwrap().zero();
+        chan = chan.second().unwrap().send(x).unwrap().zero();
     }
     chan.first().unwrap().close();
 }
@@ -75,7 +75,7 @@ fn recv_list<A>(chan: Chan<mpsc::Channel, (), RecvList<A>>) -> Vec<A> where A: s
                 None
             })
             .option(|chan_value| {
-                let (chan, mpsc::Value(x)) = chan_value.recv().unwrap();
+                let (chan, x) = chan_value.recv().unwrap();
                 vec.push(x);
                 Some(chan.zero())
             })
@@ -104,7 +104,7 @@ fn clipper(plane: Plane,
             None
         })
         .option(|chan_value| {
-            let (chan, mpsc::Value(ptz)) = chan_value.recv().unwrap();
+            let (chan, ptz) = chan_value.recv().unwrap();
             Some((ptz, chan.zero()))
         })
         .unwrap();
@@ -120,7 +120,7 @@ fn clipper(plane: Plane,
 
     loop {
         if above(pt, plane) {
-            oc = oc.second().unwrap().send(mpsc::Value(pt)).unwrap().zero();
+            oc = oc.second().unwrap().send(pt).unwrap().zero();
         }
 
         let maybe_values = ic
@@ -130,20 +130,20 @@ fn clipper(plane: Plane,
                 None
             })
             .option(|chan_value| {
-                let (ic, mpsc::Value(pt2)) = chan_value.recv().unwrap();
+                let (ic, pt2) = chan_value.recv().unwrap();
                 Some((pt2, ic.zero()))
             })
             .unwrap();
 
         if let Some((pt2, next_ic)) = maybe_values {
             if let Some(pt) = intersect(pt, pt2, plane) {
-                oc = oc.second().unwrap().send(mpsc::Value(pt)).unwrap().zero();
+                oc = oc.second().unwrap().send(pt).unwrap().zero();
             }
             pt = pt2;
             ic = next_ic;
         } else {
             if let Some(pt) = intersect(pt, pt0, plane) {
-                oc = oc.second().unwrap().send(mpsc::Value(pt)).unwrap().zero();
+                oc = oc.second().unwrap().send(pt).unwrap().zero();
             }
             oc.first().unwrap().close();
             break;
