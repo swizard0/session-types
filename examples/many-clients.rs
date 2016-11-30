@@ -7,7 +7,7 @@ use rand::random;
 
 use session_types_ng::*;
 
-type Server = Recv<mpsc::Value<u8>, Choose<Send<mpsc::Value<u8>, End>, More<Choose<End, Nil>>>>;
+type Server = Recv<mpsc::Value<u8>, Choose<Send<mpsc::Value<u8>, End>, Choose<End, Nil>>>;
 type Client = <Server as HasDual>::Dual;
 
 fn server_handler(chan: Chan<mpsc::Channel, (), Server>) {

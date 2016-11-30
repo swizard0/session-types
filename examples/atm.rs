@@ -7,16 +7,16 @@ use session_types_ng::*;
 use session_types_ng::mpsc::Value;
 
 type Id = String;
-type Atm = Recv<Value<Id>, Choose<Rec<AtmInner>, More<Choose<End, Nil>>>>;
+type Atm = Recv<Value<Id>, Choose<Rec<AtmInner>, Choose<End, Nil>>>;
 
 type AtmInner =
-    Offer<AtmDeposit, More<
-    Offer<AtmWithdraw, More<
-    Offer<AtmBalance, More<
-    Offer<End, Nil>>>>>>>;
+    Offer<AtmDeposit,
+    Offer<AtmWithdraw,
+    Offer<AtmBalance,
+    Offer<End, Nil>>>>;
 
 type AtmDeposit = Recv<Value<u64>, Send<Value<u64>, Var<Z>>>;
-type AtmWithdraw = Recv<Value<u64>, Choose<Var<Z>, More<Choose<Var<Z>, Nil>>>>;
+type AtmWithdraw = Recv<Value<u64>, Choose<Var<Z>, Choose<Var<Z>, Nil>>>;
 type AtmBalance = Send<Value<u64>, Var<Z>>;
 
 type Client = <Atm as HasDual>::Dual;

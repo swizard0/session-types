@@ -4,7 +4,7 @@ extern crate session_types_ng;
 
 use session_types_ng::*;
 
-type Srv = Offer<End, More<Offer<Recv<mpsc::Value<String>, Var<Z>>, Nil>>>;
+type Srv = Offer<End, Offer<Recv<mpsc::Value<String>, Var<Z>>, Nil>>;
 
 fn srv(chan: Chan<mpsc::Channel, (), Rec<Srv>>) {
     let mut chan = chan.enter();

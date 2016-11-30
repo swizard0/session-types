@@ -11,15 +11,15 @@ use session_types_ng::*;
 type SrvQuit = End;
 type SrvAdd  = Recv<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Send<mpsc::Value<i64>, Var<Z>>>>;
 type SrvNeg  = Recv<mpsc::Value<i64>, Send<mpsc::Value<i64>, Var<Z>>>;
-type SrvSqrt = Recv<mpsc::Value<f64>, Choose<Send<mpsc::Value<f64>, Var<Z>>, More<Choose<Var<Z>, Nil>>>>;
+type SrvSqrt = Recv<mpsc::Value<f64>, Choose<Send<mpsc::Value<f64>, Var<Z>>, Choose<Var<Z>, Nil>>>;
 type SrvEval = Recv<mpsc::Value<fn(i64) -> bool>, Recv<mpsc::Value<i64>, Send<mpsc::Value<bool>, Var<Z>>>>;
 
 type Srv =
-    Offer<SrvQuit, More<
-    Offer<SrvAdd, More<
-    Offer<SrvNeg, More<
-    Offer<SrvSqrt, More<
-    Offer<SrvEval, Nil>>>>>>>>>;
+    Offer<SrvQuit,
+    Offer<SrvAdd,
+    Offer<SrvNeg,
+    Offer<SrvSqrt,
+    Offer<SrvEval, Nil>>>>>;
 
 fn server(chan: Chan<mpsc::Channel, (), Rec<Srv>>) {
     let mut chan = chan.enter();
@@ -67,8 +67,8 @@ fn server(chan: Chan<mpsc::Channel, (), Rec<Srv>>) {
 // work the types in general.
 
 type AddCli<R> =
-    Choose<End, More<
-    Choose<Send<mpsc::Value<i64>, Send<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Var<Z>>>>, R>>>;
+    Choose<End,
+    Choose<Send<mpsc::Value<i64>, Send<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Var<Z>>>>, R>>;
 
 fn add_client<R>(chan: Chan<mpsc::Channel, (), Rec<AddCli<R>>>) {
     let (chan, mpsc::Value(n)) = chan
@@ -82,9 +82,9 @@ fn add_client<R>(chan: Chan<mpsc::Channel, (), Rec<AddCli<R>>>) {
 }
 
 type NegCli<R, S> =
-    Choose<End, More<
-    Choose<R, More<
-    Choose<Send<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Var<Z>>>, S>>>>>;
+    Choose<End,
+    Choose<R,
+    Choose<Send<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Var<Z>>>, S>>>;
 
 fn neg_client<R, S>(chan: Chan<mpsc::Channel, (), Rec<NegCli<R, S>>>) {
     let (chan, mpsc::Value(n)) = chan
@@ -97,10 +97,10 @@ fn neg_client<R, S>(chan: Chan<mpsc::Channel, (), Rec<NegCli<R, S>>>) {
 }
 
 type SqrtCli<R, S, T> =
-    Choose<End, More<
-    Choose<R, More<
-    Choose<S, More<
-    Choose<Send<mpsc::Value<f64>, Offer<Recv<mpsc::Value<f64>, Var<Z>>, More<Offer<Var<Z>, Nil>>>>, T>>>>>>>;
+    Choose<End,
+    Choose<R,
+    Choose<S,
+    Choose<Send<mpsc::Value<f64>, Offer<Recv<mpsc::Value<f64>, Var<Z>>, Offer<Var<Z>, Nil>>>, T>>>>;
 
 fn sqrt_client<R, S, T>(chan: Chan<mpsc::Channel, (), Rec<SqrtCli<R, S, T>>>) {
     let () = chan
@@ -123,11 +123,11 @@ fn sqrt_client<R, S, T>(chan: Chan<mpsc::Channel, (), Rec<SqrtCli<R, S, T>>>) {
 // `fn_client` sends a function over the channel
 
 type PrimeCli<R, S, T> =
-    Choose<End, More<
-    Choose<R, More<
-    Choose<S, More<
-    Choose<T, More<
-    Choose<Send<mpsc::Value<fn(i64) -> bool>, Send<mpsc::Value<i64>, Recv<mpsc::Value<bool>, Var<Z>>>>, Nil>>>>>>>>>;
+    Choose<End,
+    Choose<R,
+    Choose<S,
+    Choose<T,
+    Choose<Send<mpsc::Value<fn(i64) -> bool>, Send<mpsc::Value<i64>, Recv<mpsc::Value<bool>, Var<Z>>>>, Nil>>>>>;
 
 fn fn_client<R, S, T>(chan: Chan<mpsc::Channel, (), Rec<PrimeCli<R, S, T>>>) {
     fn even(n: i64) -> bool {
@@ -152,9 +152,9 @@ fn fn_client<R, S, T>(chan: Chan<mpsc::Channel, (), Rec<PrimeCli<R, S, T>>>) {
 // integer and prints it.
 
 type AskNeg<R, S> =
-    Choose<End, More<
-    Choose<R, More<
-    Choose<Send<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Var<Z>>>, S>>>>>;
+    Choose<End,
+    Choose<R,
+    Choose<Send<mpsc::Value<i64>, Recv<mpsc::Value<i64>, Var<Z>>>, S>>>;
 
 type DelegChanSend<R, S> =
     Send<mpsc::Value<Chan<mpsc::Channel, (AskNeg<R, S>, ()), Recv<mpsc::Value<i64>, Var<Z>>>>, End>;

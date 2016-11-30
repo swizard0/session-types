@@ -2,9 +2,6 @@
 //!
 //! This is an implementation of *session types* in Rust.
 //! ```
-
-#![cfg_attr(feature = "chan_select", feature(mpsc_select))]
-
 use std::marker::PhantomData;
 
 pub mod mpsc;
@@ -71,9 +68,6 @@ pub struct Send<A, P>(PhantomData<(A, P)>);
 #[allow(missing_copy_implementations)]
 pub struct Nil;
 
-/// More elements to follow
-pub struct More<P>(PhantomData<P>);
-
 /// Active choice between `P` and protocols in the list `L`
 pub struct Choose<P, L>(PhantomData<(P, L)>);
 
@@ -105,10 +99,6 @@ unsafe impl<A, P: HasDual> HasDual for Recv<A, P> {
 
 unsafe impl HasDual for Nil {
     type Dual = Nil;
-}
-
-unsafe impl<P: HasDual> HasDual for More<P> {
-    type Dual = More<P::Dual>;
 }
 
 unsafe impl<P: HasDual, L: HasDual> HasDual for Choose<P, L> {
@@ -227,7 +217,7 @@ impl<SR, E, P, L> Chan<SR, E, Choose<P, L>> where SR: Carrier {
     }
 }
 
-impl<SR, E, P, Q, L> Chan<SR, E, Choose<P, More<Choose<Q, L>>>> where SR: Carrier {
+impl<SR, E, P, Q, L> Chan<SR, E, Choose<P, Choose<Q, L>>> where SR: Carrier {
      /// Perform an active choice, skipping first element and selecting tail of the choose list.
     #[must_use]
     pub fn cdr(mut self) -> Result<Chan<SR, E, Choose<Q, L>>, SR::SendChoiceErr> {
@@ -248,7 +238,7 @@ impl<SR, E, P, Q, L> Chan<SR, E, Choose<P, More<Choose<Q, L>>>> where SR: Carrie
     }
 }
 
-impl<SR, Z, PA, PB, Q, L> Chan<SR, Z, Choose<PA, More<Choose<PB, More<Choose<Q, L>>>>>> where SR: Carrier {
+impl<SR, Z, PA, PB, Q, L> Chan<SR, Z, Choose<PA, Choose<PB, Choose<Q, L>>>> where SR: Carrier {
     /// Convenience function. This is identical to `.cdr().cdr()`
     #[must_use]
     pub fn cddr(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
@@ -262,7 +252,7 @@ impl<SR, Z, PA, PB, Q, L> Chan<SR, Z, Choose<PA, More<Choose<PB, More<Choose<Q, 
     }
 }
 
-impl<SR, Z, PA, PB, PC, Q, L> Chan<SR, Z, Choose<PA, More<Choose<PB, More<Choose<PC, More<Choose<Q, L>>>>>>>> where SR: Carrier {
+impl<SR, Z, PA, PB, PC, Q, L> Chan<SR, Z, Choose<PA, Choose<PB, Choose<PC, Choose<Q, L>>>>> where SR: Carrier {
     /// Convenience function. This is identical to `.cdr().cdr().cdr()`
     #[must_use]
     pub fn cdddr(self) -> Result<Chan<SR, Z, Choose<Q, L>>, SR::SendChoiceErr> {
@@ -277,7 +267,7 @@ impl<SR, Z, PA, PB, PC, Q, L> Chan<SR, Z, Choose<PA, More<Choose<PB, More<Choose
 }
 
 impl<SR, Z, PA, PB, PC, PD, Q, L>
-    Chan<SR, Z, Choose<PA, More<Choose<PB, More<Choose<PC, More<Choose<PD, More<Choose<Q, L>>>>>>>>>> where SR: Carrier
+    Chan<SR, Z, Choose<PA, Choose<PB, Choose<PC, Choose<PD, Choose<Q, L>>>>>> where SR: Carrier
 {
     /// Convenience function. This is identical to `.cdr().cdr().cdr().cdr()`
     #[must_use]
@@ -309,7 +299,7 @@ impl<SR, E, P, L> Chan<SR, E, Offer<P, L>> where SR: Carrier {
     }
 }
 
-impl<SR, E, P, Q, L, T> Offers<SR, E, Offer<P, More<Offer<Q, L>>>, T> where SR: Carrier {
+impl<SR, E, P, Q, L, T> Offers<SR, E, Offer<P, Offer<Q, L>>, T> where SR: Carrier {
     #[must_use]
     pub fn option<F>(self, mut handler: F) -> Offers<SR, E, Offer<Q, L>, T>
         where F: FnMut(Chan<SR, E, P>) -> T

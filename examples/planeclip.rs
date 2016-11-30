@@ -51,8 +51,8 @@ fn intersect(p1: Point, p2: Point, plane: Plane) -> Option<Point> {
     }
 }
 
-type SendList<A> = Rec<Choose<End, More<Choose<Send<mpsc::Value<A>, Var<Z>>, Nil>>>>;
-type RecvList<A> = Rec<Offer<End, More<Offer<Recv<mpsc::Value<A>, Var<Z>>, Nil>>>>;
+type SendList<A> = Rec<Choose<End, Choose<Send<mpsc::Value<A>, Var<Z>>, Nil>>>;
+type RecvList<A> = Rec<Offer<End, Offer<Recv<mpsc::Value<A>, Var<Z>>, Nil>>>;
 
 fn send_list<A>(chan: Chan<mpsc::Channel, (), SendList<A>>, xs: Vec<A>) where A: std::marker::Send + Copy + 'static
 {
