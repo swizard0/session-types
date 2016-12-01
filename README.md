@@ -12,7 +12,7 @@ The current project is slightly redesigned because it aims at more practical pur
 
 ```toml
 [dependencies]
-session-types-ng = "0.5"
+session-types-ng = "0.3"
 ```
 
 To `src/main.rs`:

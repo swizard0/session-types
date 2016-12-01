@@ -8,24 +8,29 @@ pub struct Channel {
     rx: Receiver<Box<u8>>,
 }
 
-impl<T> ChannelSend<Channel> for T where T: Send + 'static {
+#[derive(Clone, Debug)]
+pub struct Value<T>(pub T) where T: Send + 'static;
+
+impl<T> ChannelSend for Value<T> where T: Send + 'static {
+    type Crr = Channel;
     type Err = SendError<Box<T>>;
 
-    fn send(self, carrier: &mut Channel) -> Result<(), Self::Err> {
+    fn send(self, carrier: &mut Self::Crr) -> Result<(), Self::Err> {
         unsafe {
             let tx: &Sender<Box<T>> = transmute(&carrier.tx);
-            tx.send(Box::new(self))
+            tx.send(Box::new(self.0))
         }
     }
 }
 
-impl<T> ChannelRecv<Channel> for T where T: Sized + Send + 'static {
+impl<T> ChannelRecv for Value<T> where T: Sized + Send + 'static {
+    type Crr = Channel;
     type Err = RecvError;
 
-    fn recv(carrier: &mut Channel) -> Result<Self, Self::Err> {
+    fn recv(carrier: &mut Self::Crr) -> Result<Self, Self::Err> {
         unsafe {
             let rx: &Receiver<Box<T>> = transmute(&carrier.rx);
-            rx.recv().map(|v| *v)
+            rx.recv().map(|v| Value(*v))
         }
     }
 }
@@ -33,12 +38,12 @@ impl<T> ChannelRecv<Channel> for T where T: Sized + Send + 'static {
 impl Carrier for Channel {
     type SendChoiceErr = SendError<Box<bool>>;
     fn send_choice(&mut self, choice: bool) -> Result<(), Self::SendChoiceErr> {
-        choice.send(self)
+        Value(choice).send(self)
     }
 
     type RecvChoiceErr = RecvError;
     fn recv_choice(&mut self) -> Result<bool, Self::RecvChoiceErr> {
-        bool::recv(self)
+        Value::recv(self).map(|Value(value)| value)
     }
 }
 

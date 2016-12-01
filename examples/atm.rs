@@ -4,9 +4,10 @@ use std::thread::spawn;
 use std::sync::mpsc::{SendError, RecvError};
 
 use session_types_ng::*;
+use session_types_ng::mpsc::Value;
 
 type Id = String;
-type Atm = Recv<Id, Choose<Rec<AtmInner>, Choose<End, Nil>>>;
+type Atm = Recv<Value<Id>, Choose<Rec<AtmInner>, Choose<End, Nil>>>;
 
 type AtmInner =
     Offer<AtmDeposit,
@@ -14,9 +15,9 @@ type AtmInner =
     Offer<AtmBalance,
     Offer<End, Nil>>>>;
 
-type AtmDeposit = Recv<u64, Send<u64, Var<Z>>>;
-type AtmWithdraw = Recv<u64, Choose<Var<Z>, Choose<Var<Z>, Nil>>>;
-type AtmBalance = Send<u64, Var<Z>>;
+type AtmDeposit = Recv<Value<u64>, Send<Value<u64>, Var<Z>>>;
+type AtmWithdraw = Recv<Value<u64>, Choose<Var<Z>, Choose<Var<Z>, Nil>>>;
+type AtmBalance = Send<Value<u64>, Var<Z>>;
 
 type Client = <Atm as HasDual>::Dual;
 
@@ -46,7 +47,7 @@ enum AtmError {
 
 fn atm(chan: Chan<mpsc::Channel, (), Atm>) -> Result<(), AtmError> {
     let mut chan = {
-        let (chan, id) = chan.recv().map_err(AtmError::RecvId)?;
+        let (chan, Value(id)) = chan.recv().map_err(AtmError::RecvId)?;
         if !approved(&id) {
             chan.second().map_err(AtmError::FailChooseId)?.close();
             return Ok(());
@@ -59,13 +60,13 @@ fn atm(chan: Chan<mpsc::Channel, (), Atm>) -> Result<(), AtmError> {
         let maybe_chan = chan
             .offer()
             .option(|chan_deposit| {
-                let (chan, amt) = chan_deposit.recv().map_err(AtmError::RecvDeposit)?;
+                let (chan, Value(amt)) = chan_deposit.recv().map_err(AtmError::RecvDeposit)?;
                 balance += amt;
-                let chan = chan.send(balance).map_err(AtmError::SendDepositBalance)?.zero();
+                let chan = chan.send(Value(balance)).map_err(AtmError::SendDepositBalance)?.zero();
                 Ok(Some(chan))
             })
             .option(|chan_withdraw| {
-                let (chan, amt) = chan_withdraw.recv().map_err(AtmError::RecvWithdraw)?;
+                let (chan, Value(amt)) = chan_withdraw.recv().map_err(AtmError::RecvWithdraw)?;
                 let chan =
                     if amt > balance {
                         chan.second().map_err(AtmError::FailChooseWithdraw)?.zero()
@@ -76,7 +77,7 @@ fn atm(chan: Chan<mpsc::Channel, (), Atm>) -> Result<(), AtmError> {
                 Ok(Some(chan))
             })
             .option(|chan_balance| {
-                let chan = chan_balance.send(balance).map_err(AtmError::SendBalance)?.zero();
+                let chan = chan_balance.send(Value(balance)).map_err(AtmError::SendBalance)?.zero();
                 Ok(Some(chan))
             })
             .option(|chan_quit| {
@@ -110,7 +111,7 @@ fn login_client(chan: Chan<mpsc::Channel, (), Client>, login: &str) ->
     Result<Chan<mpsc::Channel, (<AtmInner as HasDual>::Dual, ()), <AtmInner as HasDual>::Dual>, ClientError>
 {
     let chan = chan
-        .send(login.to_string()).map_err(ClientError::SendId)?
+        .send(Value(login.to_string())).map_err(ClientError::SendId)?
         .offer()
         .option(|chan_success| Ok(chan_success.enter()))
         .option(|chan_fail| {
@@ -123,9 +124,9 @@ fn login_client(chan: Chan<mpsc::Channel, (), Client>, login: &str) ->
 
 fn deposit_client(chan: Chan<mpsc::Channel, (), Client>) -> Result<(), ClientError> {
     let chan = login_client(chan, "Deposit Client")?;
-    let (chan, new_balance) = chan
+    let (chan, Value(new_balance)) = chan
         .first().map_err(ClientError::FailChooseDeposit)?
-        .send(200).map_err(ClientError::SendDeposit)?
+        .send(Value(200)).map_err(ClientError::SendDeposit)?
         .recv().map_err(ClientError::RecvBalance)?;
     println!("deposit_client: new balance: {}", new_balance);
     chan.zero()
@@ -137,7 +138,7 @@ fn deposit_client(chan: Chan<mpsc::Channel, (), Client>) -> Result<(), ClientErr
 fn withdraw_client(chan: Chan<mpsc::Channel, (), Client>) -> Result<(), ClientError> {
     login_client(chan, "Withdraw Client")?
         .second().map_err(ClientError::FailChooseWithdraw)?
-        .send(100).map_err(ClientError::SendWithdraw)?
+        .send(Value(100)).map_err(ClientError::SendWithdraw)?
         .offer()
         .option(|chan_success| {
             println!("withdraw_client: successfully withdrew 100");
@@ -152,7 +153,7 @@ fn withdraw_client(chan: Chan<mpsc::Channel, (), Client>) -> Result<(), ClientEr
             chan_fail
                 .zero()
                 .first().map_err(ClientError::FailChooseDeposit)?
-                .send(50).map_err(ClientError::SendDeposit)?
+                .send(Value(50)).map_err(ClientError::SendDeposit)?
                 .recv().map_err(ClientError::RecvBalance)?
                 .0
                 .zero()

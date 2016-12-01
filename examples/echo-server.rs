@@ -4,7 +4,7 @@ extern crate session_types_ng;
 
 use session_types_ng::*;
 
-type Srv = Offer<End, Offer<Recv<String, Var<Z>>, Nil>>;
+type Srv = Offer<End, Offer<Recv<mpsc::Value<String>, Var<Z>>, Nil>>;
 
 fn srv(chan: Chan<mpsc::Channel, (), Rec<Srv>>) {
     let mut chan = chan.enter();
@@ -17,7 +17,7 @@ fn srv(chan: Chan<mpsc::Channel, (), Rec<Srv>>) {
                 None
             })
             .option(|chan_recv| {
-                let (chan, s) = chan_recv.recv().unwrap();
+                let (chan, mpsc::Value(s)) = chan_recv.recv().unwrap();
                 println!("Received: {}", s);
                 Some(chan.zero())
             })
@@ -47,7 +47,7 @@ fn cli(chan: Chan<mpsc::Channel, (), Rec<Cli>>) {
             "q" => {
                 chan
                     .second().unwrap()
-                    .send(format!("{} lines sent", count)).unwrap()
+                    .send(mpsc::Value(format!("{} lines sent", count))).unwrap()
                     .zero()
                     .first().unwrap()
                     .close();
@@ -57,7 +57,7 @@ fn cli(chan: Chan<mpsc::Channel, (), Rec<Cli>>) {
             _ => {
                 chan = chan
                     .second().unwrap()
-                    .send(buf.clone()).unwrap()
+                    .send(mpsc::Value(buf.clone())).unwrap()
                     .zero();
                 buf.clear();
                 count += 1;

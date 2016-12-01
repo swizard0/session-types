@@ -8,18 +8,20 @@ pub mod mpsc;
 
 /// In order to support sending via session channel a value
 /// should implement `ChannelSend` trait.
-pub trait ChannelSend<Crr> {
+pub trait ChannelSend {
+    type Crr;
     type Err;
 
-    fn send(self, carrier: &mut Crr) -> Result<(), Self::Err>;
+    fn send(self, carrier: &mut Self::Crr) -> Result<(), Self::Err>;
 }
 
 /// In order to support receiving via session channel a value
 /// should implement `ChannelRecv` trait.
-pub trait ChannelRecv<Crr>: Sized {
+pub trait ChannelRecv: Sized {
+    type Crr;
     type Err;
 
-    fn recv(carrier: &mut Crr) -> Result<Self, Self::Err>;
+    fn recv(carrier: &mut Self::Crr) -> Result<Self, Self::Err>;
 }
 
 pub trait Carrier: Sized {
@@ -162,7 +164,7 @@ fn cast_chan<SR, EA, EB, PA, PB>(chan: Chan<SR, EA, PA>) -> Chan<SR, EB, PB> {
     }
 }
 
-impl<SR, E, P, T> Chan<SR, E, Send<T, P>> where SR: Carrier, T: ChannelSend<SR> {
+impl<SR, E, P, T> Chan<SR, E, Send<T, P>> where SR: Carrier, T: ChannelSend<Crr = SR> {
     /// Send a value of type `T` over the channel. Returns a channel with
     /// protocol `P`
     #[must_use]
@@ -178,12 +180,12 @@ impl<SR, E, P, T> Chan<SR, E, Send<T, P>> where SR: Carrier, T: ChannelSend<SR> 
     }
 }
 
-impl<SR, E, P, T> Chan<SR, E, Recv<T, P>> where SR: Carrier, T: ChannelRecv<SR> {
+impl<SR, E, P, T> Chan<SR, E, Recv<T, P>> where SR: Carrier, T: ChannelRecv<Crr = SR> {
     /// Receives a value of type `T` from the channel. Returns a tuple
     /// containing the resulting channel and the received value.
     #[must_use]
     pub fn recv(mut self) -> Result<(Chan<SR, E, P>, T), T::Err> {
-        match <T as ChannelRecv<SR>>::recv(&mut self.carrier) {
+        match <T as ChannelRecv>::recv(&mut self.carrier) {
             Ok(v) =>
                 Ok((cast_chan(self), v)),
             Err(e) => {

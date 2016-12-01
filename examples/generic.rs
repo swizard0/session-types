@@ -6,12 +6,12 @@ extern crate session_types_ng;
 
 use session_types_ng::*;
 
-fn srv<A>(x: A, c: Chan<mpsc::Channel, (), Send<A, End>>) where A: std::marker::Send + 'static {
-    c.send(x).unwrap().close();
+fn srv<A>(x: A, c: Chan<mpsc::Channel, (), Send<mpsc::Value<A>, End>>) where A: std::marker::Send + 'static {
+    c.send(mpsc::Value(x)).unwrap().close();
 }
 
-fn cli<A>(c: Chan<mpsc::Channel, (), Recv<A, End>>) where A: std::marker::Send + std::fmt::Debug + 'static {
-    let (c, x) = c.recv().unwrap();
+fn cli<A>(c: Chan<mpsc::Channel, (), Recv<mpsc::Value<A>, End>>) where A: std::marker::Send + std::fmt::Debug + 'static {
+    let (c, mpsc::Value(x)) = c.recv().unwrap();
     println!("{:?}", x);
     c.close();
 }
