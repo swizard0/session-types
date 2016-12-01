@@ -8,11 +8,10 @@ pub struct Channel {
     rx: Receiver<Box<u8>>,
 }
 
-impl<T> ChannelSend for T where T: Send + 'static {
-    type Crr = Channel;
+impl<T> ChannelSend<Channel> for T where T: Send + 'static {
     type Err = SendError<Box<T>>;
 
-    fn send(self, carrier: &mut Self::Crr) -> Result<(), Self::Err> {
+    fn send(self, carrier: &mut Channel) -> Result<(), Self::Err> {
         unsafe {
             let tx: &Sender<Box<T>> = transmute(&carrier.tx);
             tx.send(Box::new(self))
@@ -20,11 +19,10 @@ impl<T> ChannelSend for T where T: Send + 'static {
     }
 }
 
-impl<T> ChannelRecv for T where T: Sized + Send + 'static {
-    type Crr = Channel;
+impl<T> ChannelRecv<Channel> for T where T: Sized + Send + 'static {
     type Err = RecvError;
 
-    fn recv(carrier: &mut Self::Crr) -> Result<Self, Self::Err> {
+    fn recv(carrier: &mut Channel) -> Result<Self, Self::Err> {
         unsafe {
             let rx: &Receiver<Box<T>> = transmute(&carrier.rx);
             rx.recv().map(|v| *v)
