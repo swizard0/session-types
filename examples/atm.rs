@@ -57,39 +57,43 @@ fn atm(chan: Chan<mpsc::Channel, (), Atm>) -> Result<(), AtmError> {
 
     let mut balance = 0;
     loop {
-        let maybe_chan = chan
+        enum Req<D, W, B, Q> {
+            Deposit(D),
+            Withdraw(W),
+            Balance(B),
+            Quit(Q),
+        }
+
+        let req = chan
             .offer()
-            .option(|chan_deposit| {
-                let (chan, Value(amt)) = chan_deposit.recv().map_err(AtmError::RecvDeposit)?;
+            .option(Req::Deposit)
+            .option(Req::Withdraw)
+            .option(Req::Balance)
+            .option(Req::Quit)
+            .map_err(AtmError::OfferAtm)?;
+
+        match req {
+            Req::Deposit(chan_deposit) => {
+                let (c, Value(amt)) = chan_deposit.recv().map_err(AtmError::RecvDeposit)?;
                 balance += amt;
-                let chan = chan.send(Value(balance)).map_err(AtmError::SendDepositBalance)?.zero();
-                Ok(Some(chan))
-            })
-            .option(|chan_withdraw| {
-                let (chan, Value(amt)) = chan_withdraw.recv().map_err(AtmError::RecvWithdraw)?;
-                let chan =
+                chan = c.send(Value(balance)).map_err(AtmError::SendDepositBalance)?.zero();
+            },
+            Req::Withdraw(chan_withdraw) => {
+                let (c, Value(amt)) = chan_withdraw.recv().map_err(AtmError::RecvWithdraw)?;
+                chan =
                     if amt > balance {
-                        chan.second().map_err(AtmError::FailChooseWithdraw)?.zero()
+                        c.second().map_err(AtmError::FailChooseWithdraw)?.zero()
                     } else {
                         balance -= amt;
-                        chan.first().map_err(AtmError::SuccessChooseWithdraw)?.zero()
+                        c.first().map_err(AtmError::SuccessChooseWithdraw)?.zero()
                     };
-                Ok(Some(chan))
-            })
-            .option(|chan_balance| {
-                let chan = chan_balance.send(Value(balance)).map_err(AtmError::SendBalance)?.zero();
-                Ok(Some(chan))
-            })
-            .option(|chan_quit| {
+            },
+            Req::Balance(chan_balance) =>
+                chan = chan_balance.send(Value(balance)).map_err(AtmError::SendBalance)?.zero(),
+            Req::Quit(chan_quit) => {
                 chan_quit.close();
-                Ok(None)
-            })
-            .map_err(AtmError::OfferAtm)??;
-
-        if let Some(next_chan) = maybe_chan {
-            chan = next_chan;
-        } else {
-            return Ok(());
+                return Ok(());
+            },
         }
     }
 }
