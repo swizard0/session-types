@@ -151,9 +151,9 @@ They both used for describing the possible ways the protocol can proceed. Inside
 
 * an `Offer` endpoint waits for a `Choose` one to select one of the protocols available to continue with
 * receives somehow the decision
-* and finally installs the protocol choosen, so both endpoints of the channel is synchronized
+* and finally installs the protocol chosen, so both endpoints of the channel is synchronized
 
-`Choose` and `Offer` types represent a set of protocols for branching as linked list, where `Nil` stands for empty list, and `Choose<P, L>` or `Offer<P, L>` specify list node (cons cell) with protocol `P` and (recursively) the tail of the list `L`. For example, consider the following example: some protocol point where a decisin should be made: either a value of type `usize` should be transmitted (see previously declared `Send42Proto`), or a session should be terminated instantly and its channel should be closed.
+`Choose` and `Offer` types represent a set of protocols for branching as linked list, where `Nil` stands for empty list, and `Choose<P, L>` or `Offer<P, L>` specify list node (cons cell) with protocol `P` and (recursively) the tail of the list `L`. For example, consider the following example: some protocol point where a decision should be made: either a value of type `usize` should be transmitted (see previously declared `Send42Proto`), or a session should be terminated instantly and its channel should be closed.
 
 ```rust
 type SendOrCloseProto = Choose<Send42Proto, Choose<End, Nil>>;
@@ -178,7 +178,7 @@ impl<SR, E, P, Q, L> Chan<SR, E, Choose<P, Choose<Q, L>>> where ... {
 }
 ```
 
-And so on. Note that we cannot go beyond the end of a list (for example, choosing `third` on a list with only two protocols) because there would not be appropriate methods declared. This is how we could send a value throught the channel with `SendOrCloseProto` session:
+And so on. Note that we cannot go beyond the end of a list (such as choosing `third` on a list with only two protocols) because there would not be appropriate methods declared. This is how we could send a value through the channel with `SendOrCloseProto` session:
 
 ```rust
 fn choose_send_42(channel: Chan<mpsc::Channel, (), SendOrCloseProto>) {
@@ -208,7 +208,7 @@ impl<SR, E, P, T> Offers<SR, E, Offer<P, Nil>, T> where ... {
 }
 ```
 
-This could seems like difficult to understand, but the main idea is pretty simple:
+This could seems quite difficult to understand, but the main idea is pretty simple:
 
 * Just provide one handler for each option.
 * Each handler should receive its own channel parametrized with protocol given for this particular case.
